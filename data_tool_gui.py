@@ -69,66 +69,89 @@ class DataProcessingGUI:
         self.center_window()
     
     def read_excel_file(self, file_path):
-        """智能读取Excel文件，自动判断文件类型和引擎"""
+        """智能读取文件，自动判断文件类型"""
         try:
             file_extension = os.path.splitext(file_path)[1].lower()
+            self.log(f"读取文件: {os.path.basename(file_path)} (格式: {file_extension})")
             
             if file_extension == '.csv':
-                # CSV文件使用csv引擎
-                return pd.read_csv(file_path)
+                # CSV文件使用pd.read_csv，尝试不同编码
+                self.log("检测到CSV文件，使用CSV读取方法")
+                try:
+                    # 尝试UTF-8编码
+                    return pd.read_csv(file_path, encoding='utf-8')
+                except UnicodeDecodeError:
+                    # 尝试GBK编码（中文Windows常用）
+                    self.log("UTF-8编码失败，尝试GBK编码")
+                    return pd.read_csv(file_path, encoding='gbk')
+                except Exception as e:
+                    # 尝试其他编码
+                    self.log(f"UTF-8编码失败: {str(e)}")
+                    try:
+                        return pd.read_csv(file_path, encoding='gb2312')
+                    except:
+                        # 最后尝试系统默认编码
+                        return pd.read_csv(file_path)
+            
             elif file_extension == '.xlsx':
                 # .xlsx文件使用openpyxl引擎
                 return pd.read_excel(file_path, engine='openpyxl')
+            
             elif file_extension == '.xls':
-                # .xls文件使用xlrd引擎（旧版本）
+                # .xls文件使用xlrd引擎
                 try:
                     return pd.read_excel(file_path, engine='xlrd')
                 except:
-                    # 如果xlrd不支持，尝试用openpyxl
+                    # 如果xlrd失败，尝试openpyxl
                     return pd.read_excel(file_path, engine='openpyxl')
+            
             elif file_extension == '.xlsm':
                 # .xlsm文件使用openpyxl引擎
                 return pd.read_excel(file_path, engine='openpyxl')
+            
             elif file_extension == '.xlsb':
                 # .xlsb文件使用pyxlsb引擎
                 return pd.read_excel(file_path, engine='pyxlsb')
+            
             else:
-                # 尝试默认读取
-                return pd.read_excel(file_path)
-        except Exception as e:
-            # 如果指定引擎失败，尝试其他引擎
-            self.log(f"使用默认引擎失败，尝试其他引擎: {str(e)}")
-            
-            # 尝试所有可用的引擎
-            engines = ['openpyxl', 'xlrd', 'pyxlsb', 'odf']
-            for engine in engines:
+                # 未知格式，尝试默认读取
+                self.log(f"未知文件格式: {file_extension}，尝试默认读取")
                 try:
-                    return pd.read_excel(file_path, engine=engine)
+                    return pd.read_csv(file_path)
                 except:
-                    continue
-            
-            # 如果所有引擎都失败，抛出原始错误
+                    return pd.read_excel(file_path)
+        
+        except Exception as e:
+            self.log(f"读取文件失败: {str(e)}")
             raise e
     
     def save_excel_file(self, df, file_path):
-        """智能保存Excel文件，自动判断文件类型和引擎"""
+        """智能保存文件，自动判断文件类型"""
         try:
             file_extension = os.path.splitext(file_path)[1].lower()
+            self.log(f"保存文件: {os.path.basename(file_path)} (格式: {file_extension})")
             
             if file_extension == '.csv':
-                # CSV文件使用csv引擎
-                df.to_csv(file_path, index=False)
+                # CSV文件使用to_csv
+                self.log("保存为CSV格式")
+                df.to_csv(file_path, index=False, encoding='utf-8-sig')  # 使用UTF-8 BOM编码，Excel可以正确打开
+                return True
+            
             elif file_extension == '.xlsx':
                 # .xlsx文件使用openpyxl引擎
                 df.to_excel(file_path, index=False, engine='openpyxl')
+                return True
+            
             elif file_extension == '.xls':
                 # .xls文件使用xlwt引擎
                 df.to_excel(file_path, index=False, engine='xlwt')
-            else:
-                # 默认使用openpyxl
-                df.to_excel(file_path, index=False, engine='openpyxl')
+                return True
             
-            return True
+            else:
+                # 默认保存为Excel格式
+                df.to_excel(file_path, index=False, engine='openpyxl')
+                return True
+        
         except Exception as e:
             self.log(f"保存文件失败: {str(e)}")
             return False
@@ -143,12 +166,10 @@ class DataProcessingGUI:
     
     def bind_mousewheel_recursive(self, widget):
         """递归绑定鼠标滚轮事件到所有组件"""
-        # 绑定鼠标滚轮事件
         widget.bind("<MouseWheel>", self.on_mousewheel_windows)
         widget.bind("<Button-4>", self.on_mousewheel_linux)
         widget.bind("<Button-5>", self.on_mousewheel_linux)
         
-        # 递归绑定到所有子组件
         for child in widget.winfo_children():
             self.bind_mousewheel_recursive(child)
     
@@ -158,7 +179,7 @@ class DataProcessingGUI:
             self.main_canvas.yview_scroll(-3, "units")
         else:
             self.main_canvas.yview_scroll(3, "units")
-        return "break"  # 阻止事件传递
+        return "break"
     
     def on_mousewheel_linux(self, event):
         """Linux鼠标滚轮事件"""
@@ -166,7 +187,7 @@ class DataProcessingGUI:
             self.main_canvas.yview_scroll(-3, "units")
         elif event.num == 5:
             self.main_canvas.yview_scroll(3, "units")
-        return "break"  # 阻止事件传递
+        return "break"
     
     def center_window(self):
         """窗口居中"""
@@ -182,27 +203,22 @@ class DataProcessingGUI:
         progress_frame = ttk.LabelFrame(self.main_frame, text="处理进度", padding="5")
         progress_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
         
-        # 进度条
         self.progress_var = tk.DoubleVar()
         self.progress_bar = ttk.Progressbar(progress_frame, variable=self.progress_var, 
                                            maximum=100, length=800, mode='determinate')
         self.progress_bar.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         
-        # 进度百分比标签
         self.progress_label = ttk.Label(progress_frame, text="0%")
         self.progress_label.grid(row=0, column=2, padx=10)
         
-        # 状态标签
         self.status_label = ttk.Label(progress_frame, text="就绪", foreground="green")
         self.status_label.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=5)
         
-        # 不确定进度条
         self.indeterminate_progress = ttk.Progressbar(progress_frame, mode='indeterminate',
                                                       length=800)
         self.indeterminate_progress.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         self.indeterminate_progress.grid_remove()
         
-        # 取消按钮
         self.cancel_button = ttk.Button(progress_frame, text="取消", command=self.cancel_operation,
                                        state='disabled')
         self.cancel_button.grid(row=2, column=2, padx=10)
@@ -214,11 +230,9 @@ class DataProcessingGUI:
         log_frame = ttk.LabelFrame(self.main_frame, text="操作日志", padding="5")
         log_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=10)
         
-        # 日志文本框
         self.log_text = scrolledtext.ScrolledText(log_frame, height=5, width=100)
         self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E))
         
-        # 清除日志按钮
         clear_btn = ttk.Button(log_frame, text="清除日志", command=self.clear_log)
         clear_btn.grid(row=1, column=0, pady=5)
     
@@ -282,7 +296,7 @@ class DataProcessingGUI:
         self.notebook.add(merge_frame, text="数据合并")
         
         # 文件选择区域
-        file_frame = ttk.LabelFrame(merge_frame, text="选择要合并的Excel文件", padding="10")
+        file_frame = ttk.LabelFrame(merge_frame, text="选择要合并的文件（支持Excel和CSV）", padding="10")
         file_frame.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
         # 文件列表和滚动条
@@ -333,6 +347,10 @@ class DataProcessingGUI:
         self.output_path = tk.StringVar()
         ttk.Entry(output_frame, textvariable=self.output_path, width=50).grid(row=0, column=1, padx=5)
         ttk.Button(output_frame, text="浏览", command=self.select_output_file).grid(row=0, column=2)
+        
+        # 输出格式提示
+        ttk.Label(output_frame, text="提示：输出格式根据文件扩展名自动判断（.csv或.xlsx）", 
+                 foreground="gray").grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=5)
         
         # 执行按钮
         self.merge_button = ttk.Button(merge_frame, text="开始合并", command=self.start_merge, width=20)
@@ -385,7 +403,7 @@ class DataProcessingGUI:
         type_frame.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
         self.convert_type = tk.StringVar(value="excel_to_word")
-        ttk.Radiobutton(type_frame, text="Excel转Word", variable=self.convert_type, 
+        ttk.Radiobutton(type_frame, text="Excel/CSV转Word", variable=self.convert_type, 
                        value="excel_to_word").grid(row=0, column=0, padx=10)
         ttk.Radiobutton(type_frame, text="Word转Excel", variable=self.convert_type, 
                        value="word_to_excel").grid(row=0, column=1, padx=10)
@@ -470,8 +488,13 @@ class DataProcessingGUI:
     # 文件选择方法
     def add_files(self):
         files = filedialog.askopenfilenames(
-            title="选择Excel文件",
-            filetypes=[("Excel files", "*.xlsx *.xls *.csv"), ("All files", "*.*")]
+            title="选择文件",
+            filetypes=[
+                ("所有支持的文件", "*.xlsx *.xls *.csv"),
+                ("Excel文件", "*.xlsx *.xls"),
+                ("CSV文件", "*.csv"),
+                ("所有文件", "*.*")
+            ]
         )
         for file in files:
             if file not in self.file_listbox.get(0, tk.END):
@@ -492,15 +515,24 @@ class DataProcessingGUI:
         file_path = filedialog.asksaveasfilename(
             title="保存文件",
             defaultextension=".xlsx",
-            filetypes=[("Excel files", "*.xlsx"), ("CSV files", "*.csv")]
+            filetypes=[
+                ("Excel文件", "*.xlsx"),
+                ("CSV文件", "*.csv"),
+                ("所有文件", "*.*")
+            ]
         )
         if file_path:
             self.output_path.set(file_path)
+            self.log(f"输出文件设置为: {file_path}")
     
     def select_clean_file(self):
         file_path = filedialog.askopenfilename(
-            title="选择Excel文件",
-            filetypes=[("Excel files", "*.xlsx *.xls *.csv")]
+            title="选择文件",
+            filetypes=[
+                ("所有支持的文件", "*.xlsx *.xls *.csv"),
+                ("Excel文件", "*.xlsx *.xls"),
+                ("CSV文件", "*.csv")
+            ]
         )
         if file_path:
             self.clean_file_path.set(file_path)
@@ -508,13 +540,17 @@ class DataProcessingGUI:
     def select_input_file(self):
         if self.convert_type.get() == "excel_to_word":
             file_path = filedialog.askopenfilename(
-                title="选择Excel文件",
-                filetypes=[("Excel files", "*.xlsx *.xls")]
+                title="选择文件",
+                filetypes=[
+                    ("所有支持的文件", "*.xlsx *.xls *.csv"),
+                    ("Excel文件", "*.xlsx *.xls"),
+                    ("CSV文件", "*.csv")
+                ]
             )
         else:
             file_path = filedialog.askopenfilename(
                 title="选择Word文件",
-                filetypes=[("Word files", "*.docx")]
+                filetypes=[("Word文件", "*.docx")]
             )
         if file_path:
             self.convert_input.set(file_path)
@@ -524,21 +560,28 @@ class DataProcessingGUI:
             file_path = filedialog.asksaveasfilename(
                 title="保存Word文件",
                 defaultextension=".docx",
-                filetypes=[("Word files", "*.docx")]
+                filetypes=[("Word文件", "*.docx")]
             )
         else:
             file_path = filedialog.asksaveasfilename(
-                title="保存Excel文件",
+                title="保存文件",
                 defaultextension=".xlsx",
-                filetypes=[("Excel files", "*.xlsx")]
+                filetypes=[
+                    ("Excel文件", "*.xlsx"),
+                    ("CSV文件", "*.csv")
+                ]
             )
         if file_path:
             self.convert_output.set(file_path)
     
     def select_split_file(self):
         file_path = filedialog.askopenfilename(
-            title="选择Excel文件",
-            filetypes=[("Excel files", "*.xlsx *.xls *.csv")]
+            title="选择文件",
+            filetypes=[
+                ("所有支持的文件", "*.xlsx *.xls *.csv"),
+                ("Excel文件", "*.xlsx *.xls"),
+                ("CSV文件", "*.csv")
+            ]
         )
         if file_path:
             self.split_file_path.set(file_path)
@@ -580,6 +623,7 @@ class DataProcessingGUI:
         try:
             self.start_indeterminate("正在合并文件...")
             self.log("开始合并文件...")
+            self.log(f"要合并的文件数量: {len(files)}")
             
             # 重置进度
             self.progress_var.set(0)
@@ -595,6 +639,7 @@ class DataProcessingGUI:
                 
                 # 使用智能读取方法
                 df = self.read_excel_file(file)
+                self.log(f"成功读取 {os.path.basename(file)}: {df.shape[0]}行, {df.shape[1]}列")
                 
                 # 添加数据来源列
                 if self.add_source_var.get():
@@ -610,8 +655,10 @@ class DataProcessingGUI:
             merge_type = self.merge_type.get()
             if merge_type == "vertical":
                 merged_df = pd.concat(dfs, ignore_index=True)
+                self.log(f"垂直合并完成，总行数: {len(merged_df)}")
             else:
                 merged_df = pd.concat(dfs, axis=1)
+                self.log(f"水平合并完成，总列数: {len(merged_df.columns)}")
             
             self.update_progress(80, "正在处理数据...")
             
@@ -620,7 +667,8 @@ class DataProcessingGUI:
                 self.check_cancel()
                 original_count = len(merged_df)
                 merged_df = merged_df.drop_duplicates()
-                self.log(f"去除重复行: {original_count - len(merged_df)}行")
+                removed_count = original_count - len(merged_df)
+                self.log(f"去除重复行: {removed_count}行")
             
             self.check_cancel()
             self.update_progress(90, "正在保存结果...")
@@ -679,8 +727,9 @@ class DataProcessingGUI:
             if self.remove_duplicates.get():
                 self.check_cancel()
                 self.update_progress(30, "正在去除重复行...")
+                before_count = len(df)
                 df = df.drop_duplicates()
-                self.log(f"去除重复行后: {df.shape[0]}行")
+                self.log(f"去除重复行: {before_count - len(df)}行")
             
             # 填充空值
             if self.fill_na.get():
@@ -704,7 +753,13 @@ class DataProcessingGUI:
             # 保存清理后的文件
             self.check_cancel()
             self.update_progress(90, "正在保存文件...")
-            output_path = file_path.replace('.xlsx', '_cleaned.xlsx').replace('.xls', '_cleaned.xlsx').replace('.csv', '_cleaned.csv')
+            
+            # 根据原文件格式生成输出文件名
+            file_ext = os.path.splitext(file_path)[1].lower()
+            if file_ext == '.csv':
+                output_path = file_path.replace('.csv', '_cleaned.csv')
+            else:
+                output_path = file_path.replace('.xlsx', '_cleaned.xlsx').replace('.xls', '_cleaned.xlsx')
             
             if self.save_excel_file(df, output_path):
                 self.update_progress(100, "清理完成")
@@ -757,16 +812,16 @@ class DataProcessingGUI:
             if convert_type == "excel_to_word":
                 from docx import Document
                 
-                # 读取Excel
-                self.update_progress(20, "正在读取Excel文件...")
+                # 读取文件
+                self.update_progress(20, "正在读取文件...")
                 df = self.read_excel_file(input_path)
-                self.log(f"读取Excel: {df.shape[0]}行, {df.shape[1]}列")
+                self.log(f"读取文件: {df.shape[0]}行, {df.shape[1]}列")
                 
                 # 创建Word文档
                 self.check_cancel()
                 self.update_progress(50, "正在创建Word文档...")
                 doc = Document()
-                doc.add_heading('Excel数据转换结果', level=1)
+                doc.add_heading('数据转换结果', level=1)
                 
                 # 添加表格
                 table = doc.add_table(rows=1, cols=len(df.columns))
@@ -791,7 +846,7 @@ class DataProcessingGUI:
                 
                 self.update_progress(90, "正在保存Word文件...")
                 doc.save(output_path)
-                self.log(f"Excel转Word完成: {output_path}")
+                self.log(f"转换完成: {output_path}")
                 
             else:  # word_to_excel
                 from docx import Document
@@ -817,9 +872,9 @@ class DataProcessingGUI:
                 df = pd.DataFrame(data[1:], columns=data[0])
                 
                 if self.save_excel_file(df, output_path):
-                    self.log(f"Word转Excel完成: {output_path}")
+                    self.log(f"转换完成: {output_path}")
                 else:
-                    raise Exception("保存Excel文件失败")
+                    raise Exception("保存文件失败")
             
             self.update_progress(100, "转换完成")
             self.stop_indeterminate("转换完成", success=True)
@@ -865,6 +920,7 @@ class DataProcessingGUI:
             # 读取文件
             self.update_progress(10, "正在读取文件...")
             df = self.read_excel_file(file_path)
+            self.log(f"读取文件: {df.shape[0]}行, {df.shape[1]}列")
             
             if column_name not in df.columns:
                 raise Exception(f"列 '{column_name}' 不存在")
@@ -872,12 +928,14 @@ class DataProcessingGUI:
             # 创建输出目录
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
+                self.log(f"创建输出目录: {output_dir}")
             
             # 按列拆分
             groups = df.groupby(column_name)
             total_groups = len(groups)
             
             self.update_progress(20, f"正在拆分数据，共{total_groups}组...")
+            self.log(f"共发现 {total_groups} 个不同的值")
             
             for i, (name, group) in enumerate(groups):
                 self.check_cancel()
@@ -929,23 +987,26 @@ class DataProcessingGUI:
             self.start_indeterminate("正在批量处理...")
             self.log(f"开始批量处理: {directory}")
             
-            # 获取所有Excel文件
+            # 获取所有支持的文件
             excel_files = [f for f in os.listdir(directory) 
                           if f.endswith(('.xlsx', '.xls', '.csv'))]
             
             if not excel_files:
-                self.log("目录中没有Excel文件")
+                self.log("目录中没有支持的文件")
                 self.stop_indeterminate("未找到文件", success=False)
-                messagebox.showwarning("警告", "目录中没有Excel文件")
+                messagebox.showwarning("警告", "目录中没有支持的文件（.xlsx, .xls, .csv）")
                 return
             
             # 创建输出目录
             output_dir = os.path.join(directory, 'processed')
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
+                self.log(f"创建输出目录: {output_dir}")
             
             operation = self.batch_operation.get()
             total_files = len(excel_files)
+            
+            self.log(f"找到 {total_files} 个文件")
             
             for i, file_name in enumerate(excel_files):
                 self.check_cancel()
@@ -960,10 +1021,14 @@ class DataProcessingGUI:
                 
                 # 执行操作
                 if operation == "clean":
+                    before_count = len(df)
                     df = df.drop_duplicates()
                     df = df.fillna('')
+                    self.log(f"清理: 去除重复行 {before_count - len(df)}行")
                 elif operation == "remove_empty":
+                    before_count = len(df)
                     df = df.dropna()
+                    self.log(f"去除空行: {before_count - len(df)}行")
                 
                 # 保存处理后的文件
                 output_path = os.path.join(output_dir, f"processed_{file_name}")
