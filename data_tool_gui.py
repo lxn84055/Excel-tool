@@ -1,0 +1,647 @@
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, scrolledtext
+import pandas as pd
+import os
+import threading
+from datetime import datetime
+import re
+
+class DataProcessingGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Excel/Word 数据处理工具")
+        self.root.geometry("900x700")
+        
+        # 设置样式
+        style = ttk.Style()
+        style.theme_use('clam')
+        
+        # 创建主框架
+        self.main_frame = ttk.Frame(root, padding="10")
+        self.main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # 创建标签页
+        self.notebook = ttk.Notebook(self.main_frame)
+        self.notebook.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # 创建各个功能标签页
+        self.create_merge_tab()
+        self.create_clean_tab()
+        self.create_convert_tab()
+        self.create_split_tab()
+        self.create_batch_tab()
+        
+        # 日志区域
+        self.create_log_area()
+        
+        # 配置网格权重
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+        self.main_frame.columnconfigure(0, weight=1)
+        self.main_frame.rowconfigure(0, weight=1)
+    
+    def create_log_area(self):
+        """创建日志显示区域"""
+        log_frame = ttk.LabelFrame(self.main_frame, text="操作日志", padding="5")
+        log_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=10)
+        
+        self.log_text = scrolledtext.ScrolledText(log_frame, height=8, width=100)
+        self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E))
+        
+        # 清除日志按钮
+        clear_btn = ttk.Button(log_frame, text="清除日志", command=self.clear_log)
+        clear_btn.grid(row=1, column=0, pady=5)
+    
+    def clear_log(self):
+        """清除日志"""
+        self.log_text.delete(1.0, tk.END)
+    
+    def log(self, message):
+        """添加日志"""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
+        self.log_text.see(tk.END)
+        self.root.update()
+    
+    def create_merge_tab(self):
+        """创建数据合并标签页"""
+        merge_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(merge_frame, text="数据合并")
+        
+        # 文件选择区域
+        file_frame = ttk.LabelFrame(merge_frame, text="选择要合并的Excel文件", padding="10")
+        file_frame.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        
+        self.file_listbox = tk.Listbox(file_frame, height=6, width=80, selectmode=tk.MULTIPLE)
+        self.file_listbox.grid(row=0, column=0, columnspan=3, pady=5)
+        
+        # 文件操作按钮
+        ttk.Button(file_frame, text="添加文件", command=self.add_files).grid(row=1, column=0, pady=5)
+        ttk.Button(file_frame, text="移除选中", command=self.remove_selected_files).grid(row=1, column=1, pady=5)
+        ttk.Button(file_frame, text="清空列表", command=self.clear_file_list).grid(row=1, column=2, pady=5)
+        
+        # 合并选项
+        option_frame = ttk.LabelFrame(merge_frame, text="合并选项", padding="10")
+        option_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        
+        # 合并方式
+        ttk.Label(option_frame, text="合并方式:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.merge_type = tk.StringVar(value="vertical")
+        ttk.Radiobutton(option_frame, text="垂直合并（按行追加）", variable=self.merge_type, 
+                       value="vertical").grid(row=0, column=1, sticky=tk.W, padx=10)
+        ttk.Radiobutton(option_frame, text="水平合并（按列拼接）", variable=self.merge_type, 
+                       value="horizontal").grid(row=0, column=2, sticky=tk.W, padx=10)
+        
+        # 选择性合并选项
+        ttk.Label(option_frame, text="选择特定列:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.columns_entry = ttk.Entry(option_frame, width=40)
+        self.columns_entry.grid(row=1, column=1, columnspan=2, sticky=tk.W, pady=5)
+        ttk.Label(option_frame, text="(用逗号分隔列名，留空表示所有列)").grid(row=1, column=3, sticky=tk.W)
+        
+        # 高级选项
+        self.add_source_var = tk.BooleanVar()
+        ttk.Checkbutton(option_frame, text="添加数据来源标识", 
+                       variable=self.add_source_var).grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=5)
+        
+        self.remove_dup_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(option_frame, text="去除重复行", 
+                       variable=self.remove_dup_var).grid(row=2, column=2, columnspan=2, sticky=tk.W, pady=5)
+        
+        # 输出设置
+        output_frame = ttk.LabelFrame(merge_frame, text="输出设置", padding="10")
+        output_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(output_frame, text="输出文件:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.output_path = tk.StringVar()
+        ttk.Entry(output_frame, textvariable=self.output_path, width=50).grid(row=0, column=1, padx=5)
+        ttk.Button(output_frame, text="浏览", command=self.select_output_file).grid(row=0, column=2)
+        
+        # 执行按钮
+        ttk.Button(merge_frame, text="开始合并", command=self.start_merge).grid(row=3, column=1, pady=20)
+    
+    def create_clean_tab(self):
+        """创建数据清理标签页"""
+        clean_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(clean_frame, text="数据清理")
+        
+        # 文件选择
+        file_frame = ttk.LabelFrame(clean_frame, text="选择文件", padding="10")
+        file_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        self.clean_file_path = tk.StringVar()
+        ttk.Entry(file_frame, textvariable=self.clean_file_path, width=60).grid(row=0, column=0, padx=5)
+        ttk.Button(file_frame, text="浏览", command=self.select_clean_file).grid(row=0, column=1)
+        
+        # 清理选项
+        option_frame = ttk.LabelFrame(clean_frame, text="清理选项", padding="10")
+        option_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        self.remove_duplicates = tk.BooleanVar(value=True)
+        ttk.Checkbutton(option_frame, text="去除重复行", 
+                       variable=self.remove_duplicates).grid(row=0, column=0, sticky=tk.W, pady=5)
+        
+        self.fill_na = tk.BooleanVar(value=True)
+        ttk.Checkbutton(option_frame, text="填充空值", 
+                       variable=self.fill_na).grid(row=0, column=1, sticky=tk.W, pady=5)
+        
+        ttk.Label(option_frame, text="填充值:").grid(row=0, column=2, sticky=tk.W, padx=10)
+        self.fill_value = tk.StringVar(value="")
+        ttk.Entry(option_frame, textvariable=self.fill_value, width=15).grid(row=0, column=3)
+        
+        self.strip_spaces = tk.BooleanVar(value=True)
+        ttk.Checkbutton(option_frame, text="去除首尾空格", 
+                       variable=self.strip_spaces).grid(row=1, column=0, sticky=tk.W, pady=5)
+        
+        # 执行按钮
+        ttk.Button(clean_frame, text="开始清理", command=self.start_clean).grid(row=2, column=1, pady=20)
+    
+    def create_convert_tab(self):
+        """创建格式转换标签页"""
+        convert_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(convert_frame, text="格式转换")
+        
+        # 转换类型选择
+        type_frame = ttk.LabelFrame(convert_frame, text="转换类型", padding="10")
+        type_frame.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        
+        self.convert_type = tk.StringVar(value="excel_to_word")
+        ttk.Radiobutton(type_frame, text="Excel转Word", variable=self.convert_type, 
+                       value="excel_to_word").grid(row=0, column=0, padx=10)
+        ttk.Radiobutton(type_frame, text="Word转Excel", variable=self.convert_type, 
+                       value="word_to_excel").grid(row=0, column=1, padx=10)
+        
+        # 输入文件
+        input_frame = ttk.LabelFrame(convert_frame, text="输入文件", padding="10")
+        input_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        
+        self.convert_input = tk.StringVar()
+        ttk.Entry(input_frame, textvariable=self.convert_input, width=60).grid(row=0, column=0, padx=5)
+        ttk.Button(input_frame, text="浏览", command=self.select_input_file).grid(row=0, column=1)
+        
+        # 输出文件
+        output_frame = ttk.LabelFrame(convert_frame, text="输出文件", padding="10")
+        output_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        
+        self.convert_output = tk.StringVar()
+        ttk.Entry(output_frame, textvariable=self.convert_output, width=60).grid(row=0, column=0, padx=5)
+        ttk.Button(output_frame, text="浏览", command=self.select_convert_output).grid(row=0, column=1)
+        
+        # 执行按钮
+        ttk.Button(convert_frame, text="开始转换", command=self.start_convert).grid(row=3, column=1, pady=20)
+    
+    def create_split_tab(self):
+        """创建数据拆分标签页"""
+        split_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(split_frame, text="数据拆分")
+        
+        # 文件选择
+        file_frame = ttk.LabelFrame(split_frame, text="选择文件", padding="10")
+        file_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        self.split_file_path = tk.StringVar()
+        ttk.Entry(file_frame, textvariable=self.split_file_path, width=60).grid(row=0, column=0, padx=5)
+        ttk.Button(file_frame, text="浏览", command=self.select_split_file).grid(row=0, column=1)
+        
+        # 拆分设置
+        setting_frame = ttk.LabelFrame(split_frame, text="拆分设置", padding="10")
+        setting_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(setting_frame, text="拆分依据列:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.split_column = ttk.Entry(setting_frame, width=30)
+        self.split_column.grid(row=0, column=1, sticky=tk.W, pady=5)
+        
+        ttk.Label(setting_frame, text="输出目录:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.split_output_dir = tk.StringVar(value="./split_output")
+        ttk.Entry(setting_frame, textvariable=self.split_output_dir, width=40).grid(row=1, column=1, pady=5)
+        ttk.Button(setting_frame, text="浏览", command=self.select_split_output).grid(row=1, column=2, padx=5)
+        
+        # 执行按钮
+        ttk.Button(split_frame, text="开始拆分", command=self.start_split).grid(row=2, column=1, pady=20)
+    
+    def create_batch_tab(self):
+        """创建批量处理标签页"""
+        batch_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(batch_frame, text="批量处理")
+        
+        # 目录选择
+        dir_frame = ttk.LabelFrame(batch_frame, text="选择文件夹", padding="10")
+        dir_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        self.batch_dir = tk.StringVar()
+        ttk.Entry(dir_frame, textvariable=self.batch_dir, width=60).grid(row=0, column=0, padx=5)
+        ttk.Button(dir_frame, text="浏览", command=self.select_batch_dir).grid(row=0, column=1)
+        
+        # 处理选项
+        option_frame = ttk.LabelFrame(batch_frame, text="处理选项", padding="10")
+        option_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        self.batch_operation = tk.StringVar(value="clean")
+        ttk.Radiobutton(option_frame, text="清理数据", variable=self.batch_operation, 
+                       value="clean").grid(row=0, column=0, padx=10)
+        ttk.Radiobutton(option_frame, text="去除空行", variable=self.batch_operation, 
+                       value="remove_empty").grid(row=0, column=1, padx=10)
+        
+        # 执行按钮
+        ttk.Button(batch_frame, text="开始批量处理", command=self.start_batch).grid(row=2, column=1, pady=20)
+    
+    # 文件选择方法
+    def add_files(self):
+        """添加文件到列表"""
+        files = filedialog.askopenfilenames(
+            title="选择Excel文件",
+            filetypes=[("Excel files", "*.xlsx *.xls *.csv"), ("All files", "*.*")]
+        )
+        for file in files:
+            if file not in self.file_listbox.get(0, tk.END):
+                self.file_listbox.insert(tk.END, file)
+                self.log(f"添加文件: {os.path.basename(file)}")
+    
+    def remove_selected_files(self):
+        """移除选中的文件"""
+        selected = self.file_listbox.curselection()
+        for index in reversed(selected):
+            self.file_listbox.delete(index)
+            self.log("移除文件")
+    
+    def clear_file_list(self):
+        """清空文件列表"""
+        self.file_listbox.delete(0, tk.END)
+        self.log("清空文件列表")
+    
+    def select_output_file(self):
+        """选择输出文件"""
+        file_path = filedialog.asksaveasfilename(
+            title="保存文件",
+            defaultextension=".xlsx",
+            filetypes=[("Excel files", "*.xlsx"), ("CSV files", "*.csv")]
+        )
+        if file_path:
+            self.output_path.set(file_path)
+    
+    def select_clean_file(self):
+        """选择要清理的文件"""
+        file_path = filedialog.askopenfilename(
+            title="选择Excel文件",
+            filetypes=[("Excel files", "*.xlsx *.xls *.csv")]
+        )
+        if file_path:
+            self.clean_file_path.set(file_path)
+    
+    def select_input_file(self):
+        """选择输入文件"""
+        if self.convert_type.get() == "excel_to_word":
+            file_path = filedialog.askopenfilename(
+                title="选择Excel文件",
+                filetypes=[("Excel files", "*.xlsx *.xls")]
+            )
+        else:
+            file_path = filedialog.askopenfilename(
+                title="选择Word文件",
+                filetypes=[("Word files", "*.docx")]
+            )
+        if file_path:
+            self.convert_input.set(file_path)
+    
+    def select_convert_output(self):
+        """选择转换输出文件"""
+        if self.convert_type.get() == "excel_to_word":
+            file_path = filedialog.asksaveasfilename(
+                title="保存Word文件",
+                defaultextension=".docx",
+                filetypes=[("Word files", "*.docx")]
+            )
+        else:
+            file_path = filedialog.asksaveasfilename(
+                title="保存Excel文件",
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx")]
+            )
+        if file_path:
+            self.convert_output.set(file_path)
+    
+    def select_split_file(self):
+        """选择要拆分的文件"""
+        file_path = filedialog.askopenfilename(
+            title="选择Excel文件",
+            filetypes=[("Excel files", "*.xlsx *.xls *.csv")]
+        )
+        if file_path:
+            self.split_file_path.set(file_path)
+    
+    def select_split_output(self):
+        """选择拆分输出目录"""
+        dir_path = filedialog.askdirectory(title="选择输出目录")
+        if dir_path:
+            self.split_output_dir.set(dir_path)
+    
+    def select_batch_dir(self):
+        """选择批量处理目录"""
+        dir_path = filedialog.askdirectory(title="选择文件夹")
+        if dir_path:
+            self.batch_dir.set(dir_path)
+    
+    # 处理功能方法
+    def start_merge(self):
+        """开始合并"""
+        if not hasattr(self, 'data_tool'):
+            from data_tool import DataProcessingTool
+            self.data_tool = DataProcessingTool()
+        
+        files = list(self.file_listbox.get(0, tk.END))
+        if not files:
+            messagebox.showwarning("警告", "请先添加要合并的文件")
+            return
+        
+        output_path = self.output_path.get()
+        if not output_path:
+            messagebox.showwarning("警告", "请指定输出文件路径")
+            return
+        
+        # 在新线程中执行合并操作
+        thread = threading.Thread(target=self.merge_thread, args=(files, output_path))
+        thread.daemon = True
+        thread.start()
+    
+    def merge_thread(self, files, output_path):
+        """合并线程"""
+        try:
+            self.log("开始合并文件...")
+            
+            # 读取所有文件
+            dfs = []
+            for file in files:
+                self.log(f"读取文件: {os.path.basename(file)}")
+                df = pd.read_excel(file)
+                dfs.append(df)
+            
+            # 合并数据
+            merge_type = self.merge_type.get()
+            if merge_type == "vertical":
+                merged_df = pd.concat(dfs, ignore_index=True)
+            else:
+                merged_df = pd.concat(dfs, axis=1)
+            
+            # 去除重复行
+            if self.remove_dup_var.get():
+                original_count = len(merged_df)
+                merged_df = merged_df.drop_duplicates()
+                self.log(f"去除重复行: {original_count - len(merged_df)}行")
+            
+            # 保存结果
+            merged_df.to_excel(output_path, index=False)
+            self.log(f"合并完成！结果已保存到: {output_path}")
+            self.log(f"合并后数据: {len(merged_df)}行, {len(merged_df.columns)}列")
+            
+            messagebox.showinfo("成功", f"合并完成！\n输出文件: {output_path}")
+        except Exception as e:
+            self.log(f"合并失败: {str(e)}")
+            messagebox.showerror("错误", f"合并失败: {str(e)}")
+    
+    def start_clean(self):
+        """开始清理"""
+        file_path = self.clean_file_path.get()
+        if not file_path:
+            messagebox.showwarning("警告", "请选择要清理的文件")
+            return
+        
+        # 在新线程中执行清理操作
+        thread = threading.Thread(target=self.clean_thread, args=(file_path,))
+        thread.daemon = True
+        thread.start()
+    
+    def clean_thread(self, file_path):
+        """清理线程"""
+        try:
+            self.log(f"开始清理文件: {os.path.basename(file_path)}")
+            
+            # 读取文件
+            df = pd.read_excel(file_path)
+            original_shape = df.shape
+            self.log(f"原始数据: {original_shape[0]}行, {original_shape[1]}列")
+            
+            # 去除重复行
+            if self.remove_duplicates.get():
+                df = df.drop_duplicates()
+            
+            # 填充空值
+            if self.fill_na.get():
+                fill_value = self.fill_value.get()
+                if fill_value == "":
+                    fill_value = None
+                df = df.fillna(fill_value)
+            
+            # 去除首尾空格
+            if self.strip_spaces.get():
+                for col in df.columns:
+                    if df[col].dtype == 'object':
+                        df[col] = df[col].str.strip()
+            
+            # 保存清理后的文件
+            output_path = file_path.replace('.xlsx', '_cleaned.xlsx').replace('.xls', '_cleaned.xlsx').replace('.csv', '_cleaned.csv')
+            df.to_excel(output_path, index=False)
+            
+            self.log(f"清理完成！")
+            self.log(f"清理后数据: {df.shape[0]}行, {df.shape[1]}列")
+            self.log(f"结果已保存到: {output_path}")
+            
+            messagebox.showinfo("成功", f"清理完成！\n输出文件: {output_path}")
+        except Exception as e:
+            self.log(f"清理失败: {str(e)}")
+            messagebox.showerror("错误", f"清理失败: {str(e)}")
+    
+    def start_convert(self):
+        """开始转换"""
+        input_path = self.convert_input.get()
+        output_path = self.convert_output.get()
+        
+        if not input_path:
+            messagebox.showwarning("警告", "请选择输入文件")
+            return
+        if not output_path:
+            messagebox.showwarning("警告", "请指定输出文件路径")
+            return
+        
+        # 在新线程中执行转换操作
+        thread = threading.Thread(target=self.convert_thread, args=(input_path, output_path))
+        thread.daemon = True
+        thread.start()
+    
+    def convert_thread(self, input_path, output_path):
+        """转换线程"""
+        try:
+            convert_type = self.convert_type.get()
+            self.log(f"开始转换: {convert_type}")
+            
+            if convert_type == "excel_to_word":
+                from docx import Document
+                
+                # 读取Excel
+                df = pd.read_excel(input_path)
+                self.log(f"读取Excel: {df.shape[0]}行, {df.shape[1]}列")
+                
+                # 创建Word文档
+                doc = Document()
+                doc.add_heading('Excel数据转换结果', level=1)
+                
+                # 添加表格
+                table = doc.add_table(rows=1, cols=len(df.columns))
+                table.style = 'Light Grid Accent 1'
+                
+                # 添加表头
+                header_cells = table.rows[0].cells
+                for i, col in enumerate(df.columns):
+                    header_cells[i].text = str(col)
+                
+                # 添加数据
+                for _, row in df.iterrows():
+                    row_cells = table.add_row().cells
+                    for i, value in enumerate(row):
+                        row_cells[i].text = str(value)
+                
+                doc.save(output_path)
+                self.log(f"Excel转Word完成: {output_path}")
+                
+            else:  # word_to_excel
+                from docx import Document
+                
+                # 读取Word
+                doc = Document(input_path)
+                
+                # 获取第一个表格
+                if not doc.tables:
+                    raise Exception("Word文档中没有表格")
+                
+                table = doc.tables[0]
+                data = []
+                for row in table.rows:
+                    row_data = [cell.text for cell in row.cells]
+                    data.append(row_data)
+                
+                # 转换为DataFrame
+                df = pd.DataFrame(data[1:], columns=data[0])
+                df.to_excel(output_path, index=False)
+                self.log(f"Word转Excel完成: {output_path}")
+            
+            messagebox.showinfo("成功", f"转换完成！\n输出文件: {output_path}")
+        except Exception as e:
+            self.log(f"转换失败: {str(e)}")
+            messagebox.showerror("错误", f"转换失败: {str(e)}")
+    
+    def start_split(self):
+        """开始拆分"""
+        file_path = self.split_file_path.get()
+        column_name = self.split_column.get()
+        output_dir = self.split_output_dir.get()
+        
+        if not file_path:
+            messagebox.showwarning("警告", "请选择要拆分的文件")
+            return
+        if not column_name:
+            messagebox.showwarning("警告", "请输入拆分依据列名")
+            return
+        
+        # 在新线程中执行拆分操作
+        thread = threading.Thread(target=self.split_thread, args=(file_path, column_name, output_dir))
+        thread.daemon = True
+        thread.start()
+    
+    def split_thread(self, file_path, column_name, output_dir):
+        """拆分线程"""
+        try:
+            self.log(f"开始拆分文件: {os.path.basename(file_path)}")
+            
+            # 读取文件
+            df = pd.read_excel(file_path)
+            
+            if column_name not in df.columns:
+                raise Exception(f"列 '{column_name}' 不存在")
+            
+            # 创建输出目录
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+            
+            # 按列拆分
+            groups = df.groupby(column_name)
+            for name, group in groups:
+                safe_name = re.sub(r'[\\/*?:"<>|]', '_', str(name))
+                output_path = os.path.join(output_dir, f"{safe_name}.xlsx")
+                group.to_excel(output_path, index=False)
+                self.log(f"已保存: {safe_name}.xlsx ({len(group)}行)")
+            
+            self.log(f"拆分完成！共生成 {len(groups)} 个文件")
+            messagebox.showinfo("成功", f"拆分完成！\n生成 {len(groups)} 个文件\n输出目录: {output_dir}")
+        except Exception as e:
+            self.log(f"拆分失败: {str(e)}")
+            messagebox.showerror("错误", f"拆分失败: {str(e)}")
+    
+    def start_batch(self):
+        """开始批量处理"""
+        directory = self.batch_dir.get()
+        if not directory:
+            messagebox.showwarning("警告", "请选择要处理的文件夹")
+            return
+        
+        # 在新线程中执行批量处理
+        thread = threading.Thread(target=self.batch_thread, args=(directory,))
+        thread.daemon = True
+        thread.start()
+    
+    def batch_thread(self, directory):
+        """批量处理线程"""
+        try:
+            self.log(f"开始批量处理: {directory}")
+            
+            # 获取所有Excel文件
+            excel_files = [f for f in os.listdir(directory) 
+                          if f.endswith(('.xlsx', '.xls', '.csv'))]
+            
+            if not excel_files:
+                self.log("目录中没有Excel文件")
+                messagebox.showwarning("警告", "目录中没有Excel文件")
+                return
+            
+            # 创建输出目录
+            output_dir = os.path.join(directory, 'processed')
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+            
+            operation = self.batch_operation.get()
+            
+            for file_name in excel_files:
+                file_path = os.path.join(directory, file_name)
+                self.log(f"处理文件: {file_name}")
+                
+                # 读取文件
+                if file_name.endswith('.csv'):
+                    df = pd.read_csv(file_path)
+                else:
+                    df = pd.read_excel(file_path)
+                
+                # 执行操作
+                if operation == "clean":
+                    df = df.drop_duplicates()
+                    df = df.fillna('')
+                elif operation == "remove_empty":
+                    df = df.dropna()
+                
+                # 保存处理后的文件
+                output_path = os.path.join(output_dir, f"processed_{file_name}")
+                if file_name.endswith('.csv'):
+                    df.to_csv(output_path, index=False)
+                else:
+                    df.to_excel(output_path, index=False)
+                self.log(f"已处理: {file_name}")
+            
+            self.log(f"批量处理完成！处理了 {len(excel_files)} 个文件")
+            messagebox.showinfo("成功", f"批量处理完成！\n处理了 {len(excel_files)} 个文件\n输出目录: {output_dir}")
+        except Exception as e:
+            self.log(f"批量处理失败: {str(e)}")
+            messagebox.showerror("错误", f"批量处理失败: {str(e)}")
+
+def main():
+    root = tk.Tk()
+    app = DataProcessingGUI(root)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
