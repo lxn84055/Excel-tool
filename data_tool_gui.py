@@ -5,21 +5,36 @@ import os
 import threading
 from datetime import datetime
 import re
-import time
 
 class DataProcessingGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Excel/Word 数据处理工具")
-        self.root.geometry("1000x800")
+        self.root.geometry("1000x700")
         
         # 设置样式
         style = ttk.Style()
         style.theme_use('clam')
         
-        # 创建主框架
-        self.main_frame = ttk.Frame(root, padding="10")
-        self.main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        # 创建主Canvas和滚动条
+        self.main_canvas = tk.Canvas(root, highlightthickness=0)
+        self.main_scrollbar = ttk.Scrollbar(root, orient="vertical", command=self.main_canvas.yview)
+        self.main_canvas.configure(yscrollcommand=self.main_scrollbar.set)
+        
+        # 布局主Canvas和滚动条
+        self.main_canvas.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.main_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        
+        # 创建主框架（放在Canvas中）
+        self.main_frame = ttk.Frame(self.main_canvas, padding="10")
+        self.main_canvas.create_window((0, 0), window=self.main_frame, anchor="nw")
+        
+        # 绑定配置事件
+        self.main_frame.bind("<Configure>", self.on_frame_configure)
+        self.main_canvas.bind("<Configure>", self.on_canvas_configure)
+        
+        # 绑定鼠标滚轮事件
+        self.bind_mousewheel()
         
         # 创建标签页
         self.notebook = ttk.Notebook(self.main_frame)
@@ -50,6 +65,53 @@ class DataProcessingGUI:
         # 设置窗口最小大小
         self.root.minsize(800, 600)
         
+        # 设置窗口居中
+        self.center_window()
+    
+    def on_frame_configure(self, event):
+        """更新Canvas的滚动区域"""
+        self.main_canvas.configure(scrollregion=self.main_canvas.bbox("all"))
+    
+    def on_canvas_configure(self, event):
+        """调整Canvas中窗口的宽度"""
+        self.main_canvas.itemconfig(1, width=event.width)
+    
+    def bind_mousewheel(self):
+        """绑定鼠标滚轮事件"""
+        # Windows和Linux
+        self.main_canvas.bind("<MouseWheel>", self.on_mousewheel)
+        # macOS
+        self.main_canvas.bind("<Button-4>", self.on_mousewheel)
+        self.main_canvas.bind("<Button-5>", self.on_mousewheel)
+        
+        # 绑定到所有子组件
+        self.bind_children_mousewheel(self.root)
+    
+    def bind_children_mousewheel(self, widget):
+        """递归绑定鼠标滚轮到所有子组件"""
+        widget.bind("<MouseWheel>", self.on_mousewheel)
+        widget.bind("<Button-4>", self.on_mousewheel)
+        widget.bind("<Button-5>", self.on_mousewheel)
+        
+        for child in widget.winfo_children():
+            self.bind_children_mousewheel(child)
+    
+    def on_mousewheel(self, event):
+        """处理鼠标滚轮事件"""
+        if event.num == 4 or event.delta > 0:
+            self.main_canvas.yview_scroll(-1, "units")
+        elif event.num == 5 or event.delta < 0:
+            self.main_canvas.yview_scroll(1, "units")
+    
+    def center_window(self):
+        """窗口居中"""
+        self.root.update_idletasks()
+        width = 1000
+        height = 700
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f'{width}x{height}+{x}+{y}')
+    
     def create_progress_area(self):
         """创建进度条区域"""
         progress_frame = ttk.LabelFrame(self.main_frame, text="处理进度", padding="5")
@@ -69,18 +131,17 @@ class DataProcessingGUI:
         self.status_label = ttk.Label(progress_frame, text="就绪", foreground="green")
         self.status_label.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=5)
         
-        # 不确定进度条（用于无法确定进度的操作）
+        # 不确定进度条
         self.indeterminate_progress = ttk.Progressbar(progress_frame, mode='indeterminate',
                                                       length=800)
         self.indeterminate_progress.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
-        self.indeterminate_progress.grid_remove()  # 默认隐藏
+        self.indeterminate_progress.grid_remove()
         
         # 取消按钮
         self.cancel_button = ttk.Button(progress_frame, text="取消", command=self.cancel_operation,
                                        state='disabled')
         self.cancel_button.grid(row=2, column=2, padx=10)
         
-        # 取消标志
         self.cancel_flag = False
     
     def create_log_area(self):
@@ -88,8 +149,12 @@ class DataProcessingGUI:
         log_frame = ttk.LabelFrame(self.main_frame, text="操作日志", padding="5")
         log_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=10)
         
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=5, width=100)
-        self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E))
+        # 日志文本框和滚动条
+        log_container = ttk.Frame(log_frame)
+        log_container.grid(row=0, column=0, sticky=(tk.W, tk.E))
+        
+        self.log_text = scrolledtext.ScrolledText(log_container, height=5, width=100)
+        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         # 清除日志按钮
         clear_btn = ttk.Button(log_frame, text="清除日志", command=self.clear_log)
@@ -151,24 +216,8 @@ class DataProcessingGUI:
     
     def create_merge_tab(self):
         """创建数据合并标签页"""
-        # 创建Canvas和Scrollbar用于滚动
-        merge_canvas = tk.Canvas(self.notebook, highlightthickness=0)
-        merge_scrollbar = ttk.Scrollbar(self.notebook, orient="vertical", command=merge_canvas.yview)
-        merge_frame = ttk.Frame(merge_canvas, padding="10")
-        
-        # 配置Canvas
-        merge_canvas.configure(yscrollcommand=merge_scrollbar.set)
-        merge_canvas.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        merge_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
-        
-        # 在Canvas中创建窗口
-        merge_canvas.create_window((0, 0), window=merge_frame, anchor="nw")
-        
-        # 绑定配置事件
-        merge_frame.bind("<Configure>", lambda e: merge_canvas.configure(scrollregion=merge_canvas.bbox("all")))
-        
-        # 添加标签页
-        self.notebook.add(merge_canvas, text="数据合并")
+        merge_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(merge_frame, text="数据合并")
         
         # 文件选择区域
         file_frame = ttk.LabelFrame(merge_frame, text="选择要合并的Excel文件", padding="10")
@@ -176,9 +225,9 @@ class DataProcessingGUI:
         
         # 文件列表和滚动条
         file_list_frame = ttk.Frame(file_frame)
-        file_list_frame.grid(row=0, column=0, columnspan=3, pady=5)
+        file_list_frame.grid(row=0, column=0, columnspan=3, pady=5, sticky=(tk.W, tk.E))
         
-        self.file_listbox = tk.Listbox(file_list_frame, height=5, width=80, selectmode=tk.MULTIPLE)
+        self.file_listbox = tk.Listbox(file_list_frame, height=4, width=80, selectmode=tk.MULTIPLE)
         self.file_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         file_scrollbar = ttk.Scrollbar(file_list_frame, orient="vertical", command=self.file_listbox.yview)
@@ -225,11 +274,7 @@ class DataProcessingGUI:
         
         # 执行按钮
         self.merge_button = ttk.Button(merge_frame, text="开始合并", command=self.start_merge, width=20)
-        self.merge_button.grid(row=3, column=0, columnspan=3, pady=20)
-        
-        # 添加提示标签
-        tip_label = ttk.Label(merge_frame, text="提示：可以使用鼠标滚轮滚动此页面", foreground="gray")
-        tip_label.grid(row=4, column=0, columnspan=3, pady=5)
+        self.merge_button.grid(row=3, column=0, columnspan=3, pady=10)
     
     def create_clean_tab(self):
         """创建数据清理标签页"""
@@ -266,7 +311,7 @@ class DataProcessingGUI:
         
         # 执行按钮
         self.clean_button = ttk.Button(clean_frame, text="开始清理", command=self.start_clean, width=20)
-        self.clean_button.grid(row=2, column=0, columnspan=2, pady=20)
+        self.clean_button.grid(row=2, column=0, columnspan=2, pady=10)
     
     def create_convert_tab(self):
         """创建格式转换标签页"""
@@ -301,7 +346,7 @@ class DataProcessingGUI:
         
         # 执行按钮
         self.convert_button = ttk.Button(convert_frame, text="开始转换", command=self.start_convert, width=20)
-        self.convert_button.grid(row=3, column=0, columnspan=3, pady=20)
+        self.convert_button.grid(row=3, column=0, columnspan=3, pady=10)
     
     def create_split_tab(self):
         """创建数据拆分标签页"""
@@ -331,7 +376,7 @@ class DataProcessingGUI:
         
         # 执行按钮
         self.split_button = ttk.Button(split_frame, text="开始拆分", command=self.start_split, width=20)
-        self.split_button.grid(row=2, column=0, columnspan=2, pady=20)
+        self.split_button.grid(row=2, column=0, columnspan=2, pady=10)
     
     def create_batch_tab(self):
         """创建批量处理标签页"""
@@ -358,7 +403,7 @@ class DataProcessingGUI:
         
         # 执行按钮
         self.batch_button = ttk.Button(batch_frame, text="开始批量处理", command=self.start_batch, width=20)
-        self.batch_button.grid(row=2, column=0, columnspan=2, pady=20)
+        self.batch_button.grid(row=2, column=0, columnspan=2, pady=10)
     
     # 文件选择方法
     def add_files(self):
@@ -880,15 +925,6 @@ class DataProcessingGUI:
 def main():
     root = tk.Tk()
     app = DataProcessingGUI(root)
-    
-    # 设置窗口居中
-    root.update_idletasks()
-    width = root.winfo_width()
-    height = root.winfo_height()
-    x = (root.winfo_screenwidth() // 2) - (width // 2)
-    y = (root.winfo_screenheight() // 2) - (height // 2)
-    root.geometry(f'{width}x{height}+{x}+{y}')
-    
     root.mainloop()
 
 if __name__ == "__main__":
