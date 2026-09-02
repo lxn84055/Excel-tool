@@ -5,12 +5,13 @@ import os
 import threading
 from datetime import datetime
 import re
+import time
 
 class DataProcessingGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Excel/Word 数据处理工具")
-        self.root.geometry("900x700")
+        self.root.geometry("900x750")
         
         # 设置样式
         style = ttk.Style()
@@ -31,6 +32,9 @@ class DataProcessingGUI:
         self.create_split_tab()
         self.create_batch_tab()
         
+        # 创建进度条区域
+        self.create_progress_area()
+        
         # 日志区域
         self.create_log_area()
         
@@ -39,13 +43,49 @@ class DataProcessingGUI:
         self.root.rowconfigure(0, weight=1)
         self.main_frame.columnconfigure(0, weight=1)
         self.main_frame.rowconfigure(0, weight=1)
+        
+        # 初始化处理状态
+        self.is_processing = False
+        
+    def create_progress_area(self):
+        """创建进度条区域"""
+        progress_frame = ttk.LabelFrame(self.main_frame, text="处理进度", padding="5")
+        progress_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
+        
+        # 进度条
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = ttk.Progressbar(progress_frame, variable=self.progress_var, 
+                                           maximum=100, length=700, mode='determinate')
+        self.progress_bar.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        # 进度百分比标签
+        self.progress_label = ttk.Label(progress_frame, text="0%")
+        self.progress_label.grid(row=0, column=2, padx=10)
+        
+        # 状态标签
+        self.status_label = ttk.Label(progress_frame, text="就绪", foreground="green")
+        self.status_label.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=5)
+        
+        # 不确定进度条（用于无法确定进度的操作）
+        self.indeterminate_progress = ttk.Progressbar(progress_frame, mode='indeterminate',
+                                                      length=700)
+        self.indeterminate_progress.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        self.indeterminate_progress.grid_remove()  # 默认隐藏
+        
+        # 取消按钮
+        self.cancel_button = ttk.Button(progress_frame, text="取消", command=self.cancel_operation,
+                                       state='disabled')
+        self.cancel_button.grid(row=2, column=2, padx=10)
+        
+        # 取消标志
+        self.cancel_flag = False
     
     def create_log_area(self):
         """创建日志显示区域"""
         log_frame = ttk.LabelFrame(self.main_frame, text="操作日志", padding="5")
-        log_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=10)
+        log_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=10)
         
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=8, width=100)
+        self.log_text = scrolledtext.ScrolledText(log_frame, height=6, width=100)
         self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E))
         
         # 清除日志按钮
@@ -62,6 +102,49 @@ class DataProcessingGUI:
         self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
         self.log_text.see(tk.END)
         self.root.update()
+    
+    def update_progress(self, value, status_text=None):
+        """更新进度条"""
+        self.progress_var.set(value)
+        self.progress_label.config(text=f"{int(value)}%")
+        if status_text:
+            self.status_label.config(text=status_text)
+        self.root.update()
+    
+    def start_indeterminate(self, status_text="处理中..."):
+        """启动不确定进度条"""
+        self.indeterminate_progress.grid()
+        self.indeterminate_progress.start(10)
+        self.status_label.config(text=status_text, foreground="blue")
+        self.cancel_button.config(state='normal')
+        self.cancel_flag = False
+        self.is_processing = True
+        self.root.update()
+    
+    def stop_indeterminate(self, status_text="完成", success=True):
+        """停止不确定进度条"""
+        self.indeterminate_progress.stop()
+        self.indeterminate_progress.grid_remove()
+        if success:
+            self.status_label.config(text=status_text, foreground="green")
+            self.progress_var.set(100)
+            self.progress_label.config(text="100%")
+        else:
+            self.status_label.config(text=status_text, foreground="red")
+        self.cancel_button.config(state='disabled')
+        self.is_processing = False
+        self.root.update()
+    
+    def cancel_operation(self):
+        """取消操作"""
+        self.cancel_flag = True
+        self.status_label.config(text="正在取消...", foreground="orange")
+        self.log("用户请求取消操作")
+    
+    def check_cancel(self):
+        """检查是否取消"""
+        if self.cancel_flag:
+            raise Exception("操作已被用户取消")
     
     def create_merge_tab(self):
         """创建数据合并标签页"""
@@ -92,20 +175,14 @@ class DataProcessingGUI:
         ttk.Radiobutton(option_frame, text="水平合并（按列拼接）", variable=self.merge_type, 
                        value="horizontal").grid(row=0, column=2, sticky=tk.W, padx=10)
         
-        # 选择性合并选项
-        ttk.Label(option_frame, text="选择特定列:").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.columns_entry = ttk.Entry(option_frame, width=40)
-        self.columns_entry.grid(row=1, column=1, columnspan=2, sticky=tk.W, pady=5)
-        ttk.Label(option_frame, text="(用逗号分隔列名，留空表示所有列)").grid(row=1, column=3, sticky=tk.W)
-        
         # 高级选项
         self.add_source_var = tk.BooleanVar()
         ttk.Checkbutton(option_frame, text="添加数据来源标识", 
-                       variable=self.add_source_var).grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=5)
+                       variable=self.add_source_var).grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=5)
         
         self.remove_dup_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(option_frame, text="去除重复行", 
-                       variable=self.remove_dup_var).grid(row=2, column=2, columnspan=2, sticky=tk.W, pady=5)
+                       variable=self.remove_dup_var).grid(row=1, column=2, columnspan=2, sticky=tk.W, pady=5)
         
         # 输出设置
         output_frame = ttk.LabelFrame(merge_frame, text="输出设置", padding="10")
@@ -117,7 +194,8 @@ class DataProcessingGUI:
         ttk.Button(output_frame, text="浏览", command=self.select_output_file).grid(row=0, column=2)
         
         # 执行按钮
-        ttk.Button(merge_frame, text="开始合并", command=self.start_merge).grid(row=3, column=1, pady=20)
+        self.merge_button = ttk.Button(merge_frame, text="开始合并", command=self.start_merge)
+        self.merge_button.grid(row=3, column=1, pady=20)
     
     def create_clean_tab(self):
         """创建数据清理标签页"""
@@ -153,7 +231,8 @@ class DataProcessingGUI:
                        variable=self.strip_spaces).grid(row=1, column=0, sticky=tk.W, pady=5)
         
         # 执行按钮
-        ttk.Button(clean_frame, text="开始清理", command=self.start_clean).grid(row=2, column=1, pady=20)
+        self.clean_button = ttk.Button(clean_frame, text="开始清理", command=self.start_clean)
+        self.clean_button.grid(row=2, column=1, pady=20)
     
     def create_convert_tab(self):
         """创建格式转换标签页"""
@@ -187,7 +266,8 @@ class DataProcessingGUI:
         ttk.Button(output_frame, text="浏览", command=self.select_convert_output).grid(row=0, column=1)
         
         # 执行按钮
-        ttk.Button(convert_frame, text="开始转换", command=self.start_convert).grid(row=3, column=1, pady=20)
+        self.convert_button = ttk.Button(convert_frame, text="开始转换", command=self.start_convert)
+        self.convert_button.grid(row=3, column=1, pady=20)
     
     def create_split_tab(self):
         """创建数据拆分标签页"""
@@ -216,7 +296,8 @@ class DataProcessingGUI:
         ttk.Button(setting_frame, text="浏览", command=self.select_split_output).grid(row=1, column=2, padx=5)
         
         # 执行按钮
-        ttk.Button(split_frame, text="开始拆分", command=self.start_split).grid(row=2, column=1, pady=20)
+        self.split_button = ttk.Button(split_frame, text="开始拆分", command=self.start_split)
+        self.split_button.grid(row=2, column=1, pady=20)
     
     def create_batch_tab(self):
         """创建批量处理标签页"""
@@ -242,11 +323,11 @@ class DataProcessingGUI:
                        value="remove_empty").grid(row=0, column=1, padx=10)
         
         # 执行按钮
-        ttk.Button(batch_frame, text="开始批量处理", command=self.start_batch).grid(row=2, column=1, pady=20)
+        self.batch_button = ttk.Button(batch_frame, text="开始批量处理", command=self.start_batch)
+        self.batch_button.grid(row=2, column=1, pady=20)
     
-    # 文件选择方法
+    # 文件选择方法（保持不变）
     def add_files(self):
-        """添加文件到列表"""
         files = filedialog.askopenfilenames(
             title="选择Excel文件",
             filetypes=[("Excel files", "*.xlsx *.xls *.csv"), ("All files", "*.*")]
@@ -257,19 +338,16 @@ class DataProcessingGUI:
                 self.log(f"添加文件: {os.path.basename(file)}")
     
     def remove_selected_files(self):
-        """移除选中的文件"""
         selected = self.file_listbox.curselection()
         for index in reversed(selected):
             self.file_listbox.delete(index)
             self.log("移除文件")
     
     def clear_file_list(self):
-        """清空文件列表"""
         self.file_listbox.delete(0, tk.END)
         self.log("清空文件列表")
     
     def select_output_file(self):
-        """选择输出文件"""
         file_path = filedialog.asksaveasfilename(
             title="保存文件",
             defaultextension=".xlsx",
@@ -279,7 +357,6 @@ class DataProcessingGUI:
             self.output_path.set(file_path)
     
     def select_clean_file(self):
-        """选择要清理的文件"""
         file_path = filedialog.askopenfilename(
             title="选择Excel文件",
             filetypes=[("Excel files", "*.xlsx *.xls *.csv")]
@@ -288,7 +365,6 @@ class DataProcessingGUI:
             self.clean_file_path.set(file_path)
     
     def select_input_file(self):
-        """选择输入文件"""
         if self.convert_type.get() == "excel_to_word":
             file_path = filedialog.askopenfilename(
                 title="选择Excel文件",
@@ -303,7 +379,6 @@ class DataProcessingGUI:
             self.convert_input.set(file_path)
     
     def select_convert_output(self):
-        """选择转换输出文件"""
         if self.convert_type.get() == "excel_to_word":
             file_path = filedialog.asksaveasfilename(
                 title="保存Word文件",
@@ -320,7 +395,6 @@ class DataProcessingGUI:
             self.convert_output.set(file_path)
     
     def select_split_file(self):
-        """选择要拆分的文件"""
         file_path = filedialog.askopenfilename(
             title="选择Excel文件",
             filetypes=[("Excel files", "*.xlsx *.xls *.csv")]
@@ -329,24 +403,21 @@ class DataProcessingGUI:
             self.split_file_path.set(file_path)
     
     def select_split_output(self):
-        """选择拆分输出目录"""
         dir_path = filedialog.askdirectory(title="选择输出目录")
         if dir_path:
             self.split_output_dir.set(dir_path)
     
     def select_batch_dir(self):
-        """选择批量处理目录"""
         dir_path = filedialog.askdirectory(title="选择文件夹")
         if dir_path:
             self.batch_dir.set(dir_path)
     
-    # 处理功能方法
+    # 处理功能方法（添加进度条）
     def start_merge(self):
-        """开始合并"""
-        if not hasattr(self, 'data_tool'):
-            from data_tool import DataProcessingTool
-            self.data_tool = DataProcessingTool()
-        
+        if self.is_processing:
+            messagebox.showwarning("警告", "正在处理中，请等待当前操作完成")
+            return
+            
         files = list(self.file_listbox.get(0, tk.END))
         if not files:
             messagebox.showwarning("警告", "请先添加要合并的文件")
@@ -357,22 +428,41 @@ class DataProcessingGUI:
             messagebox.showwarning("警告", "请指定输出文件路径")
             return
         
+        # 禁用按钮
+        self.merge_button.config(state='disabled')
         # 在新线程中执行合并操作
         thread = threading.Thread(target=self.merge_thread, args=(files, output_path))
         thread.daemon = True
         thread.start()
     
     def merge_thread(self, files, output_path):
-        """合并线程"""
         try:
+            self.start_indeterminate("正在合并文件...")
             self.log("开始合并文件...")
+            
+            # 重置进度
+            self.progress_var.set(0)
+            self.progress_label.config(text="0%")
             
             # 读取所有文件
             dfs = []
-            for file in files:
-                self.log(f"读取文件: {os.path.basename(file)}")
+            total_files = len(files)
+            for i, file in enumerate(files):
+                self.check_cancel()
+                self.log(f"读取文件 {i+1}/{total_files}: {os.path.basename(file)}")
+                self.update_progress((i / total_files) * 50, f"读取文件 {i+1}/{total_files}")
+                
                 df = pd.read_excel(file)
+                
+                # 添加数据来源列
+                if self.add_source_var.get():
+                    df['数据来源'] = os.path.basename(file)
+                
                 dfs.append(df)
+            
+            self.check_cancel()
+            self.update_progress(60, "正在合并数据...")
+            self.log("正在合并数据...")
             
             # 合并数据
             merge_type = self.merge_type.get()
@@ -381,76 +471,123 @@ class DataProcessingGUI:
             else:
                 merged_df = pd.concat(dfs, axis=1)
             
+            self.update_progress(80, "正在处理数据...")
+            
             # 去除重复行
             if self.remove_dup_var.get():
+                self.check_cancel()
                 original_count = len(merged_df)
                 merged_df = merged_df.drop_duplicates()
                 self.log(f"去除重复行: {original_count - len(merged_df)}行")
             
+            self.check_cancel()
+            self.update_progress(90, "正在保存结果...")
+            self.log("正在保存结果...")
+            
             # 保存结果
             merged_df.to_excel(output_path, index=False)
+            
+            self.update_progress(100, "合并完成")
             self.log(f"合并完成！结果已保存到: {output_path}")
             self.log(f"合并后数据: {len(merged_df)}行, {len(merged_df.columns)}列")
             
-            messagebox.showinfo("成功", f"合并完成！\n输出文件: {output_path}")
+            self.stop_indeterminate("合并完成", success=True)
+            messagebox.showinfo("成功", f"合并完成！\n输出文件: {output_path}\n共处理 {len(merged_df)} 行数据")
+            
         except Exception as e:
-            self.log(f"合并失败: {str(e)}")
-            messagebox.showerror("错误", f"合并失败: {str(e)}")
+            if "取消" in str(e):
+                self.stop_indeterminate("已取消", success=False)
+                self.log("操作已被用户取消")
+            else:
+                self.stop_indeterminate("处理失败", success=False)
+                self.log(f"合并失败: {str(e)}")
+                messagebox.showerror("错误", f"合并失败: {str(e)}")
+        finally:
+            # 恢复按钮
+            self.merge_button.config(state='normal')
     
     def start_clean(self):
-        """开始清理"""
+        if self.is_processing:
+            messagebox.showwarning("警告", "正在处理中，请等待当前操作完成")
+            return
+            
         file_path = self.clean_file_path.get()
         if not file_path:
             messagebox.showwarning("警告", "请选择要清理的文件")
             return
         
-        # 在新线程中执行清理操作
+        self.clean_button.config(state='disabled')
         thread = threading.Thread(target=self.clean_thread, args=(file_path,))
         thread.daemon = True
         thread.start()
     
     def clean_thread(self, file_path):
-        """清理线程"""
         try:
+            self.start_indeterminate("正在清理数据...")
             self.log(f"开始清理文件: {os.path.basename(file_path)}")
             
             # 读取文件
+            self.update_progress(10, "正在读取文件...")
             df = pd.read_excel(file_path)
             original_shape = df.shape
             self.log(f"原始数据: {original_shape[0]}行, {original_shape[1]}列")
             
             # 去除重复行
             if self.remove_duplicates.get():
+                self.check_cancel()
+                self.update_progress(30, "正在去除重复行...")
                 df = df.drop_duplicates()
+                self.log(f"去除重复行后: {df.shape[0]}行")
             
             # 填充空值
             if self.fill_na.get():
+                self.check_cancel()
+                self.update_progress(50, "正在填充空值...")
                 fill_value = self.fill_value.get()
                 if fill_value == "":
                     fill_value = None
                 df = df.fillna(fill_value)
+                self.log("填充空值完成")
             
             # 去除首尾空格
             if self.strip_spaces.get():
+                self.check_cancel()
+                self.update_progress(70, "正在去除空格...")
                 for col in df.columns:
                     if df[col].dtype == 'object':
                         df[col] = df[col].str.strip()
+                self.log("去除首尾空格完成")
             
             # 保存清理后的文件
+            self.check_cancel()
+            self.update_progress(90, "正在保存文件...")
             output_path = file_path.replace('.xlsx', '_cleaned.xlsx').replace('.xls', '_cleaned.xlsx').replace('.csv', '_cleaned.csv')
             df.to_excel(output_path, index=False)
             
+            self.update_progress(100, "清理完成")
             self.log(f"清理完成！")
             self.log(f"清理后数据: {df.shape[0]}行, {df.shape[1]}列")
             self.log(f"结果已保存到: {output_path}")
             
-            messagebox.showinfo("成功", f"清理完成！\n输出文件: {output_path}")
+            self.stop_indeterminate("清理完成", success=True)
+            messagebox.showinfo("成功", f"清理完成！\n输出文件: {output_path}\n清理后数据: {df.shape[0]}行, {df.shape[1]}列")
+            
         except Exception as e:
-            self.log(f"清理失败: {str(e)}")
-            messagebox.showerror("错误", f"清理失败: {str(e)}")
+            if "取消" in str(e):
+                self.stop_indeterminate("已取消", success=False)
+                self.log("操作已被用户取消")
+            else:
+                self.stop_indeterminate("处理失败", success=False)
+                self.log(f"清理失败: {str(e)}")
+                messagebox.showerror("错误", f"清理失败: {str(e)}")
+        finally:
+            self.clean_button.config(state='normal')
     
     def start_convert(self):
-        """开始转换"""
+        if self.is_processing:
+            messagebox.showwarning("警告", "正在处理中，请等待当前操作完成")
+            return
+            
         input_path = self.convert_input.get()
         output_path = self.convert_output.get()
         
@@ -461,25 +598,28 @@ class DataProcessingGUI:
             messagebox.showwarning("警告", "请指定输出文件路径")
             return
         
-        # 在新线程中执行转换操作
+        self.convert_button.config(state='disabled')
         thread = threading.Thread(target=self.convert_thread, args=(input_path, output_path))
         thread.daemon = True
         thread.start()
     
     def convert_thread(self, input_path, output_path):
-        """转换线程"""
         try:
             convert_type = self.convert_type.get()
+            self.start_indeterminate("正在转换...")
             self.log(f"开始转换: {convert_type}")
             
             if convert_type == "excel_to_word":
                 from docx import Document
                 
                 # 读取Excel
+                self.update_progress(20, "正在读取Excel文件...")
                 df = pd.read_excel(input_path)
                 self.log(f"读取Excel: {df.shape[0]}行, {df.shape[1]}列")
                 
                 # 创建Word文档
+                self.check_cancel()
+                self.update_progress(50, "正在创建Word文档...")
                 doc = Document()
                 doc.add_heading('Excel数据转换结果', level=1)
                 
@@ -493,11 +633,18 @@ class DataProcessingGUI:
                     header_cells[i].text = str(col)
                 
                 # 添加数据
-                for _, row in df.iterrows():
+                total_rows = len(df)
+                for idx, (_, row) in enumerate(df.iterrows()):
+                    self.check_cancel()
+                    if idx % 10 == 0:  # 每10行更新一次进度
+                        progress = 50 + (idx / total_rows) * 40
+                        self.update_progress(progress, f"正在转换数据 {idx}/{total_rows}")
+                    
                     row_cells = table.add_row().cells
                     for i, value in enumerate(row):
                         row_cells[i].text = str(value)
                 
+                self.update_progress(90, "正在保存Word文件...")
                 doc.save(output_path)
                 self.log(f"Excel转Word完成: {output_path}")
                 
@@ -505,12 +652,15 @@ class DataProcessingGUI:
                 from docx import Document
                 
                 # 读取Word
+                self.update_progress(30, "正在读取Word文件...")
                 doc = Document(input_path)
                 
                 # 获取第一个表格
                 if not doc.tables:
                     raise Exception("Word文档中没有表格")
                 
+                self.check_cancel()
+                self.update_progress(60, "正在提取表格数据...")
                 table = doc.tables[0]
                 data = []
                 for row in table.rows:
@@ -518,17 +668,31 @@ class DataProcessingGUI:
                     data.append(row_data)
                 
                 # 转换为DataFrame
+                self.update_progress(80, "正在转换为Excel...")
                 df = pd.DataFrame(data[1:], columns=data[0])
                 df.to_excel(output_path, index=False)
                 self.log(f"Word转Excel完成: {output_path}")
             
+            self.update_progress(100, "转换完成")
+            self.stop_indeterminate("转换完成", success=True)
             messagebox.showinfo("成功", f"转换完成！\n输出文件: {output_path}")
+            
         except Exception as e:
-            self.log(f"转换失败: {str(e)}")
-            messagebox.showerror("错误", f"转换失败: {str(e)}")
+            if "取消" in str(e):
+                self.stop_indeterminate("已取消", success=False)
+                self.log("操作已被用户取消")
+            else:
+                self.stop_indeterminate("转换失败", success=False)
+                self.log(f"转换失败: {str(e)}")
+                messagebox.showerror("错误", f"转换失败: {str(e)}")
+        finally:
+            self.convert_button.config(state='normal')
     
     def start_split(self):
-        """开始拆分"""
+        if self.is_processing:
+            messagebox.showwarning("警告", "正在处理中，请等待当前操作完成")
+            return
+            
         file_path = self.split_file_path.get()
         column_name = self.split_column.get()
         output_dir = self.split_output_dir.get()
@@ -540,17 +704,18 @@ class DataProcessingGUI:
             messagebox.showwarning("警告", "请输入拆分依据列名")
             return
         
-        # 在新线程中执行拆分操作
+        self.split_button.config(state='disabled')
         thread = threading.Thread(target=self.split_thread, args=(file_path, column_name, output_dir))
         thread.daemon = True
         thread.start()
     
     def split_thread(self, file_path, column_name, output_dir):
-        """拆分线程"""
         try:
+            self.start_indeterminate("正在拆分数据...")
             self.log(f"开始拆分文件: {os.path.basename(file_path)}")
             
             # 读取文件
+            self.update_progress(10, "正在读取文件...")
             df = pd.read_excel(file_path)
             
             if column_name not in df.columns:
@@ -562,33 +727,55 @@ class DataProcessingGUI:
             
             # 按列拆分
             groups = df.groupby(column_name)
-            for name, group in groups:
+            total_groups = len(groups)
+            
+            self.update_progress(20, f"正在拆分数据，共{total_groups}组...")
+            
+            for i, (name, group) in enumerate(groups):
+                self.check_cancel()
                 safe_name = re.sub(r'[\\/*?:"<>|]', '_', str(name))
                 output_path = os.path.join(output_dir, f"{safe_name}.xlsx")
                 group.to_excel(output_path, index=False)
+                
+                progress = 20 + ((i + 1) / total_groups) * 70
+                self.update_progress(progress, f"正在保存: {safe_name}.xlsx ({i+1}/{total_groups})")
                 self.log(f"已保存: {safe_name}.xlsx ({len(group)}行)")
             
-            self.log(f"拆分完成！共生成 {len(groups)} 个文件")
-            messagebox.showinfo("成功", f"拆分完成！\n生成 {len(groups)} 个文件\n输出目录: {output_dir}")
+            self.update_progress(100, "拆分完成")
+            self.log(f"拆分完成！共生成 {total_groups} 个文件")
+            
+            self.stop_indeterminate("拆分完成", success=True)
+            messagebox.showinfo("成功", f"拆分完成！\n生成 {total_groups} 个文件\n输出目录: {output_dir}")
+            
         except Exception as e:
-            self.log(f"拆分失败: {str(e)}")
-            messagebox.showerror("错误", f"拆分失败: {str(e)}")
+            if "取消" in str(e):
+                self.stop_indeterminate("已取消", success=False)
+                self.log("操作已被用户取消")
+            else:
+                self.stop_indeterminate("拆分失败", success=False)
+                self.log(f"拆分失败: {str(e)}")
+                messagebox.showerror("错误", f"拆分失败: {str(e)}")
+        finally:
+            self.split_button.config(state='normal')
     
     def start_batch(self):
-        """开始批量处理"""
+        if self.is_processing:
+            messagebox.showwarning("警告", "正在处理中，请等待当前操作完成")
+            return
+            
         directory = self.batch_dir.get()
         if not directory:
             messagebox.showwarning("警告", "请选择要处理的文件夹")
             return
         
-        # 在新线程中执行批量处理
+        self.batch_button.config(state='disabled')
         thread = threading.Thread(target=self.batch_thread, args=(directory,))
         thread.daemon = True
         thread.start()
     
     def batch_thread(self, directory):
-        """批量处理线程"""
         try:
+            self.start_indeterminate("正在批量处理...")
             self.log(f"开始批量处理: {directory}")
             
             # 获取所有Excel文件
@@ -597,6 +784,7 @@ class DataProcessingGUI:
             
             if not excel_files:
                 self.log("目录中没有Excel文件")
+                self.stop_indeterminate("未找到文件", success=False)
                 messagebox.showwarning("警告", "目录中没有Excel文件")
                 return
             
@@ -606,10 +794,15 @@ class DataProcessingGUI:
                 os.makedirs(output_dir)
             
             operation = self.batch_operation.get()
+            total_files = len(excel_files)
             
-            for file_name in excel_files:
+            for i, file_name in enumerate(excel_files):
+                self.check_cancel()
                 file_path = os.path.join(directory, file_name)
-                self.log(f"处理文件: {file_name}")
+                self.log(f"处理文件 {i+1}/{total_files}: {file_name}")
+                
+                progress = (i / total_files) * 100
+                self.update_progress(progress, f"正在处理 {i+1}/{total_files}: {file_name}")
                 
                 # 读取文件
                 if file_name.endswith('.csv'):
@@ -630,13 +823,25 @@ class DataProcessingGUI:
                     df.to_csv(output_path, index=False)
                 else:
                     df.to_excel(output_path, index=False)
+                
                 self.log(f"已处理: {file_name}")
             
-            self.log(f"批量处理完成！处理了 {len(excel_files)} 个文件")
-            messagebox.showinfo("成功", f"批量处理完成！\n处理了 {len(excel_files)} 个文件\n输出目录: {output_dir}")
+            self.update_progress(100, "批量处理完成")
+            self.log(f"批量处理完成！处理了 {total_files} 个文件")
+            
+            self.stop_indeterminate("批量处理完成", success=True)
+            messagebox.showinfo("成功", f"批量处理完成！\n处理了 {total_files} 个文件\n输出目录: {output_dir}")
+            
         except Exception as e:
-            self.log(f"批量处理失败: {str(e)}")
-            messagebox.showerror("错误", f"批量处理失败: {str(e)}")
+            if "取消" in str(e):
+                self.stop_indeterminate("已取消", success=False)
+                self.log("操作已被用户取消")
+            else:
+                self.stop_indeterminate("处理失败", success=False)
+                self.log(f"批量处理失败: {str(e)}")
+                messagebox.showerror("错误", f"批量处理失败: {str(e)}")
+        finally:
+            self.batch_button.config(state='normal')
 
 def main():
     root = tk.Tk()
