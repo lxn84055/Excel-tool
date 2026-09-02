@@ -5,6 +5,7 @@ import os
 import threading
 from datetime import datetime
 import re
+import csv
 
 class DataProcessingGUI:
     def __init__(self, root):
@@ -68,73 +69,212 @@ class DataProcessingGUI:
         # 设置窗口居中
         self.center_window()
     
-    def read_csv_file(self, file_path):
-        """智能读取CSV文件，处理各种编码和格式问题"""
+    def read_csv_file_robust(self, file_path):
+        """使用最宽容的方式读取CSV文件"""
+        self.log("使用宽容模式读取CSV文件...")
+        
+        # 方法1: 使用csv模块手动读取，处理不规则行
+        try:
+            self.log("尝试使用csv模块手动解析...")
+            rows = []
+            max_columns = 0
+            
+            # 检测文件编码
+            encoding = self.detect_file_encoding(file_path)
+            self.log(f"检测到文件编码: {encoding}")
+            
+            with open(file_path, 'r', encoding=encoding, errors='ignore') as f:
+                # 尝试自动检测分隔符
+                sample = f.read(4096)
+                f.seek(0)
+                
+                # 检测分隔符
+                delimiter = self.detect_delimiter(sample)
+                self.log(f"检测到分隔符: {delimiter}")
+                
+                # 使用csv.reader读取
+                csv_reader = csv.reader(f, delimiter=delimiter)
+                
+                for row_num, row in enumerate(csv_reader, 1):
+                    if row:  # 跳过空行
+                        rows.append(row)
+                        max_columns = max(max_columns, len(row))
+            
+            if not rows:
+                raise Exception("CSV文件为空")
+            
+            self.log(f"读取到 {len(rows)} 行，最大列数: {max_columns}")
+            
+            # 处理列数不一致的行
+            processed_rows = []
+            for i, row in enumerate(rows):
+                if len(row) < max_columns:
+                    # 补齐缺少的列
+                    row = row + [''] * (max_columns - len(row))
+                elif len(row) > max_columns:
+                    # 截断多余的列
+                    row = row[:max_columns]
+                processed_rows.append(row)
+            
+            # 创建DataFrame
+            if len(processed_rows) > 1:
+                # 第一行作为列名
+                columns = processed_rows[0]
+                data = processed_rows[1:]
+                df = pd.DataFrame(data, columns=columns)
+            else:
+                # 只有一行数据
+                df = pd.DataFrame(processed_rows)
+            
+            self.log(f"成功读取CSV文件: {df.shape[0]}行, {df.shape[1]}列")
+            return df
+            
+        except Exception as e:
+            self.log(f"csv模块读取失败: {str(e)}")
+        
+        # 方法2: 使用pandas的宽容参数
+        try:
+            self.log("尝试使用pandas宽容参数读取...")
+            df = pd.read_csv(
+                file_path,
+                encoding='utf-8',
+                on_bad_lines='skip',
+                engine='python',
+                error_bad_lines=False,
+                warn_bad_lines=False,
+                quoting=csv.QUOTE_ALL,  # 处理所有字段
+                skip_blank_lines=True,
+                encoding_errors='ignore'
+            )
+            if len(df) > 0:
+                self.log(f"pandas宽容模式成功: {df.shape[0]}行, {df.shape[1]}列")
+                return df
+        except Exception as e:
+            self.log(f"pandas宽容模式失败: {str(e)}")
+        
+        # 方法3: 逐行读取并修复
+        try:
+            self.log("尝试逐行读取并修复...")
+            rows = []
+            encoding = self.detect_file_encoding(file_path)
+            
+            with open(file_path, 'r', encoding=encoding, errors='ignore') as f:
+                lines = f.readlines()
+            
+            # 获取第一行作为列名
+            if lines:
+                first_line = lines[0].strip()
+                columns = self.split_csv_line(first_line)
+                self.log(f"检测到 {len(columns)} 列")
+                
+                # 处理其余行
+                for line_num, line in enumerate(lines[1:], 2):
+                    line = line.strip()
+                    if line:
+                        try:
+                            row_data = self.split_csv_line(line)
+                            if len(row_data) < len(columns):
+                                row_data += [''] * (len(columns) - len(row_data))
+                            elif len(row_data) > len(columns):
+                                row_data = row_data[:len(columns)]
+                            rows.append(row_data)
+                        except Exception as e:
+                            self.log(f"跳过第{line_num}行: {str(e)}")
+                            continue
+            
+            if rows:
+                df = pd.DataFrame(rows, columns=columns)
+                self.log(f"逐行读取成功: {df.shape[0]}行, {df.shape[1]}列")
+                return df
+                
+        except Exception as e:
+            self.log(f"逐行读取失败: {str(e)}")
+        
+        raise Exception("所有CSV读取方法都失败")
+    
+    def detect_file_encoding(self, file_path):
+        """检测文件编码"""
         encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312', 'gb18030', 'big5', 'latin1', 'iso-8859-1']
         
         for encoding in encodings:
             try:
-                self.log(f"尝试使用 {encoding} 编码读取CSV文件...")
-                
-                # 尝试不同的分隔符
-                for sep in [',', ';', '\t', '|']:
-                    try:
-                        # 使用更宽松的参数读取CSV
-                        df = pd.read_csv(
-                            file_path,
-                            encoding=encoding,
-                            sep=sep,
-                            on_bad_lines='skip',  # 跳过错误行
-                            engine='python',  # 使用Python引擎，更灵活
-                            error_bad_lines=False,  # 兼容旧版本
-                            warn_bad_lines=False  # 不显示警告
-                        )
-                        
-                        if len(df) > 0:
-                            self.log(f"成功读取CSV文件，使用编码: {encoding}, 分隔符: {sep}")
-                            self.log(f"数据形状: {df.shape[0]}行, {df.shape[1]}列")
-                            return df
-                    except:
-                        continue
-                
-                # 如果指定分隔符都失败，尝试自动检测
-                try:
-                    df = pd.read_csv(
-                        file_path,
-                        encoding=encoding,
-                        sep=None,  # 自动检测分隔符
-                        engine='python',  # 使用Python引擎
-                        on_bad_lines='skip'
-                    )
-                    
-                    if len(df) > 0:
-                        self.log(f"成功读取CSV文件（自动检测分隔符），使用编码: {encoding}")
-                        self.log(f"数据形状: {df.shape[0]}行, {df.shape[1]}列")
-                        return df
-                except:
-                    continue
-                    
-            except UnicodeDecodeError:
-                self.log(f"编码 {encoding} 失败，尝试下一个编码...")
-                continue
-            except Exception as e:
-                self.log(f"使用编码 {encoding} 读取失败: {str(e)}")
+                with open(file_path, 'r', encoding=encoding) as f:
+                    f.read(1024)
+                return encoding
+            except:
                 continue
         
-        # 所有方法都失败，尝试最后的方法
+        return 'latin1'  # 默认使用latin1，它能读取任何字节
+    
+    def detect_delimiter(self, sample_text):
+        """检测CSV分隔符"""
+        # 常见分隔符
+        delimiters = [',', ';', '\t', '|', ' ']
+        
+        # 统计每种分隔符出现的次数
+        counts = {}
+        for delimiter in delimiters:
+            counts[delimiter] = sample_text.count(delimiter)
+        
+        # 选择出现次数最多的分隔符
+        if counts:
+            max_delimiter = max(counts, key=counts.get)
+            if counts[max_delimiter] > 0:
+                return max_delimiter
+        
+        return ','  # 默认使用逗号
+    
+    def split_csv_line(self, line):
+        """手动分割CSV行，处理引号内的分隔符"""
+        result = []
+        current_field = []
+        in_quotes = False
+        
+        for char in line:
+            if char == '"':
+                in_quotes = not in_quotes
+                current_field.append(char)
+            elif char in [',', ';', '\t', '|'] and not in_quotes:
+                result.append(''.join(current_field).strip().strip('"'))
+                current_field = []
+            else:
+                current_field.append(char)
+        
+        # 添加最后一个字段
+        result.append(''.join(current_field).strip().strip('"'))
+        
+        return result
+    
+    def read_csv_file(self, file_path):
+        """读取CSV文件，使用多种策略"""
+        self.log(f"开始读取CSV文件: {os.path.basename(file_path)}")
+        
+        # 首先尝试使用宽容的读取方法
         try:
-            self.log("尝试使用默认设置读取CSV...")
-            df = pd.read_csv(
-                file_path,
-                on_bad_lines='skip',
-                engine='python',
-                error_bad_lines=False
-            )
-            if len(df) > 0:
-                self.log("使用默认设置成功读取CSV")
-                return df
+            return self.read_csv_file_robust(file_path)
         except Exception as e:
-            self.log(f"默认设置也失败: {str(e)}")
+            self.log(f"宽容读取失败: {str(e)}")
+        
+        # 如果宽容方法失败，尝试pandas默认方法
+        encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312', 'gb18030', 'big5', 'latin1']
+        
+        for encoding in encodings:
+            try:
+                self.log(f"尝试使用pandas读取，编码: {encoding}")
+                df = pd.read_csv(
+                    file_path,
+                    encoding=encoding,
+                    on_bad_lines='skip',
+                    engine='python',
+                    error_bad_lines=False,
+                    warn_bad_lines=False
+                )
+                if len(df) > 0:
+                    self.log(f"pandas读取成功: {df.shape[0]}行, {df.shape[1]}列")
+                    return df
+            except Exception as e:
+                self.log(f"编码 {encoding} 失败: {str(e)}")
+                continue
         
         raise Exception(f"无法读取CSV文件: {file_path}")
     
