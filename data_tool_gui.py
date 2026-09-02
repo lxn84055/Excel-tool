@@ -68,6 +68,76 @@ class DataProcessingGUI:
         # 设置窗口居中
         self.center_window()
     
+    def read_csv_file(self, file_path):
+        """智能读取CSV文件，处理各种编码和格式问题"""
+        encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312', 'gb18030', 'big5', 'latin1', 'iso-8859-1']
+        
+        for encoding in encodings:
+            try:
+                self.log(f"尝试使用 {encoding} 编码读取CSV文件...")
+                
+                # 尝试不同的分隔符
+                for sep in [',', ';', '\t', '|']:
+                    try:
+                        # 使用更宽松的参数读取CSV
+                        df = pd.read_csv(
+                            file_path,
+                            encoding=encoding,
+                            sep=sep,
+                            on_bad_lines='skip',  # 跳过错误行
+                            engine='python',  # 使用Python引擎，更灵活
+                            error_bad_lines=False,  # 兼容旧版本
+                            warn_bad_lines=False  # 不显示警告
+                        )
+                        
+                        if len(df) > 0:
+                            self.log(f"成功读取CSV文件，使用编码: {encoding}, 分隔符: {sep}")
+                            self.log(f"数据形状: {df.shape[0]}行, {df.shape[1]}列")
+                            return df
+                    except:
+                        continue
+                
+                # 如果指定分隔符都失败，尝试自动检测
+                try:
+                    df = pd.read_csv(
+                        file_path,
+                        encoding=encoding,
+                        sep=None,  # 自动检测分隔符
+                        engine='python',  # 使用Python引擎
+                        on_bad_lines='skip'
+                    )
+                    
+                    if len(df) > 0:
+                        self.log(f"成功读取CSV文件（自动检测分隔符），使用编码: {encoding}")
+                        self.log(f"数据形状: {df.shape[0]}行, {df.shape[1]}列")
+                        return df
+                except:
+                    continue
+                    
+            except UnicodeDecodeError:
+                self.log(f"编码 {encoding} 失败，尝试下一个编码...")
+                continue
+            except Exception as e:
+                self.log(f"使用编码 {encoding} 读取失败: {str(e)}")
+                continue
+        
+        # 所有方法都失败，尝试最后的方法
+        try:
+            self.log("尝试使用默认设置读取CSV...")
+            df = pd.read_csv(
+                file_path,
+                on_bad_lines='skip',
+                engine='python',
+                error_bad_lines=False
+            )
+            if len(df) > 0:
+                self.log("使用默认设置成功读取CSV")
+                return df
+        except Exception as e:
+            self.log(f"默认设置也失败: {str(e)}")
+        
+        raise Exception(f"无法读取CSV文件: {file_path}")
+    
     def read_excel_file(self, file_path):
         """智能读取文件，自动判断文件类型"""
         try:
@@ -75,49 +145,38 @@ class DataProcessingGUI:
             self.log(f"读取文件: {os.path.basename(file_path)} (格式: {file_extension})")
             
             if file_extension == '.csv':
-                # CSV文件使用pd.read_csv，尝试不同编码
-                self.log("检测到CSV文件，使用CSV读取方法")
-                try:
-                    # 尝试UTF-8编码
-                    return pd.read_csv(file_path, encoding='utf-8')
-                except UnicodeDecodeError:
-                    # 尝试GBK编码（中文Windows常用）
-                    self.log("UTF-8编码失败，尝试GBK编码")
-                    return pd.read_csv(file_path, encoding='gbk')
-                except Exception as e:
-                    # 尝试其他编码
-                    self.log(f"UTF-8编码失败: {str(e)}")
-                    try:
-                        return pd.read_csv(file_path, encoding='gb2312')
-                    except:
-                        # 最后尝试系统默认编码
-                        return pd.read_csv(file_path)
+                # CSV文件使用专门的读取方法
+                return self.read_csv_file(file_path)
             
             elif file_extension == '.xlsx':
                 # .xlsx文件使用openpyxl引擎
+                self.log("使用openpyxl引擎读取Excel文件")
                 return pd.read_excel(file_path, engine='openpyxl')
             
             elif file_extension == '.xls':
                 # .xls文件使用xlrd引擎
+                self.log("使用xlrd引擎读取Excel文件")
                 try:
                     return pd.read_excel(file_path, engine='xlrd')
                 except:
-                    # 如果xlrd失败，尝试openpyxl
+                    self.log("xlrd引擎失败，尝试openpyxl")
                     return pd.read_excel(file_path, engine='openpyxl')
             
             elif file_extension == '.xlsm':
                 # .xlsm文件使用openpyxl引擎
+                self.log("使用openpyxl引擎读取Excel文件")
                 return pd.read_excel(file_path, engine='openpyxl')
             
             elif file_extension == '.xlsb':
                 # .xlsb文件使用pyxlsb引擎
+                self.log("使用pyxlsb引擎读取Excel文件")
                 return pd.read_excel(file_path, engine='pyxlsb')
             
             else:
                 # 未知格式，尝试默认读取
                 self.log(f"未知文件格式: {file_extension}，尝试默认读取")
                 try:
-                    return pd.read_csv(file_path)
+                    return pd.read_csv(file_path, on_bad_lines='skip', engine='python')
                 except:
                     return pd.read_excel(file_path)
         
@@ -134,21 +193,24 @@ class DataProcessingGUI:
             if file_extension == '.csv':
                 # CSV文件使用to_csv
                 self.log("保存为CSV格式")
-                df.to_csv(file_path, index=False, encoding='utf-8-sig')  # 使用UTF-8 BOM编码，Excel可以正确打开
+                df.to_csv(file_path, index=False, encoding='utf-8-sig')
                 return True
             
             elif file_extension == '.xlsx':
                 # .xlsx文件使用openpyxl引擎
+                self.log("保存为Excel格式（openpyxl）")
                 df.to_excel(file_path, index=False, engine='openpyxl')
                 return True
             
             elif file_extension == '.xls':
                 # .xls文件使用xlwt引擎
+                self.log("保存为Excel格式（xlwt）")
                 df.to_excel(file_path, index=False, engine='xlwt')
                 return True
             
             else:
                 # 默认保存为Excel格式
+                self.log("保存为Excel格式（默认）")
                 df.to_excel(file_path, index=False, engine='openpyxl')
                 return True
         
