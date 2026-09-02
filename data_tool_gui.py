@@ -68,6 +68,71 @@ class DataProcessingGUI:
         # 设置窗口居中
         self.center_window()
     
+    def read_excel_file(self, file_path):
+        """智能读取Excel文件，自动判断文件类型和引擎"""
+        try:
+            file_extension = os.path.splitext(file_path)[1].lower()
+            
+            if file_extension == '.csv':
+                # CSV文件使用csv引擎
+                return pd.read_csv(file_path)
+            elif file_extension == '.xlsx':
+                # .xlsx文件使用openpyxl引擎
+                return pd.read_excel(file_path, engine='openpyxl')
+            elif file_extension == '.xls':
+                # .xls文件使用xlrd引擎（旧版本）
+                try:
+                    return pd.read_excel(file_path, engine='xlrd')
+                except:
+                    # 如果xlrd不支持，尝试用openpyxl
+                    return pd.read_excel(file_path, engine='openpyxl')
+            elif file_extension == '.xlsm':
+                # .xlsm文件使用openpyxl引擎
+                return pd.read_excel(file_path, engine='openpyxl')
+            elif file_extension == '.xlsb':
+                # .xlsb文件使用pyxlsb引擎
+                return pd.read_excel(file_path, engine='pyxlsb')
+            else:
+                # 尝试默认读取
+                return pd.read_excel(file_path)
+        except Exception as e:
+            # 如果指定引擎失败，尝试其他引擎
+            self.log(f"使用默认引擎失败，尝试其他引擎: {str(e)}")
+            
+            # 尝试所有可用的引擎
+            engines = ['openpyxl', 'xlrd', 'pyxlsb', 'odf']
+            for engine in engines:
+                try:
+                    return pd.read_excel(file_path, engine=engine)
+                except:
+                    continue
+            
+            # 如果所有引擎都失败，抛出原始错误
+            raise e
+    
+    def save_excel_file(self, df, file_path):
+        """智能保存Excel文件，自动判断文件类型和引擎"""
+        try:
+            file_extension = os.path.splitext(file_path)[1].lower()
+            
+            if file_extension == '.csv':
+                # CSV文件使用csv引擎
+                df.to_csv(file_path, index=False)
+            elif file_extension == '.xlsx':
+                # .xlsx文件使用openpyxl引擎
+                df.to_excel(file_path, index=False, engine='openpyxl')
+            elif file_extension == '.xls':
+                # .xls文件使用xlwt引擎
+                df.to_excel(file_path, index=False, engine='xlwt')
+            else:
+                # 默认使用openpyxl
+                df.to_excel(file_path, index=False, engine='openpyxl')
+            
+            return True
+        except Exception as e:
+            self.log(f"保存文件失败: {str(e)}")
+            return False
+    
     def on_frame_configure(self, event):
         """更新Canvas的滚动区域"""
         self.main_canvas.configure(scrollregion=self.main_canvas.bbox("all"))
@@ -528,7 +593,8 @@ class DataProcessingGUI:
                 self.log(f"读取文件 {i+1}/{total_files}: {os.path.basename(file)}")
                 self.update_progress((i / total_files) * 50, f"读取文件 {i+1}/{total_files}")
                 
-                df = pd.read_excel(file)
+                # 使用智能读取方法
+                df = self.read_excel_file(file)
                 
                 # 添加数据来源列
                 if self.add_source_var.get():
@@ -560,15 +626,16 @@ class DataProcessingGUI:
             self.update_progress(90, "正在保存结果...")
             self.log("正在保存结果...")
             
-            # 保存结果
-            merged_df.to_excel(output_path, index=False)
-            
-            self.update_progress(100, "合并完成")
-            self.log(f"合并完成！结果已保存到: {output_path}")
-            self.log(f"合并后数据: {len(merged_df)}行, {len(merged_df.columns)}列")
-            
-            self.stop_indeterminate("合并完成", success=True)
-            messagebox.showinfo("成功", f"合并完成！\n输出文件: {output_path}\n共处理 {len(merged_df)} 行数据")
+            # 使用智能保存方法
+            if self.save_excel_file(merged_df, output_path):
+                self.update_progress(100, "合并完成")
+                self.log(f"合并完成！结果已保存到: {output_path}")
+                self.log(f"合并后数据: {len(merged_df)}行, {len(merged_df.columns)}列")
+                
+                self.stop_indeterminate("合并完成", success=True)
+                messagebox.showinfo("成功", f"合并完成！\n输出文件: {output_path}\n共处理 {len(merged_df)} 行数据")
+            else:
+                raise Exception("保存文件失败")
             
         except Exception as e:
             if "取消" in str(e):
@@ -604,7 +671,7 @@ class DataProcessingGUI:
             
             # 读取文件
             self.update_progress(10, "正在读取文件...")
-            df = pd.read_excel(file_path)
+            df = self.read_excel_file(file_path)
             original_shape = df.shape
             self.log(f"原始数据: {original_shape[0]}行, {original_shape[1]}列")
             
@@ -638,15 +705,17 @@ class DataProcessingGUI:
             self.check_cancel()
             self.update_progress(90, "正在保存文件...")
             output_path = file_path.replace('.xlsx', '_cleaned.xlsx').replace('.xls', '_cleaned.xlsx').replace('.csv', '_cleaned.csv')
-            df.to_excel(output_path, index=False)
             
-            self.update_progress(100, "清理完成")
-            self.log(f"清理完成！")
-            self.log(f"清理后数据: {df.shape[0]}行, {df.shape[1]}列")
-            self.log(f"结果已保存到: {output_path}")
-            
-            self.stop_indeterminate("清理完成", success=True)
-            messagebox.showinfo("成功", f"清理完成！\n输出文件: {output_path}\n清理后数据: {df.shape[0]}行, {df.shape[1]}列")
+            if self.save_excel_file(df, output_path):
+                self.update_progress(100, "清理完成")
+                self.log(f"清理完成！")
+                self.log(f"清理后数据: {df.shape[0]}行, {df.shape[1]}列")
+                self.log(f"结果已保存到: {output_path}")
+                
+                self.stop_indeterminate("清理完成", success=True)
+                messagebox.showinfo("成功", f"清理完成！\n输出文件: {output_path}\n清理后数据: {df.shape[0]}行, {df.shape[1]}列")
+            else:
+                raise Exception("保存文件失败")
             
         except Exception as e:
             if "取消" in str(e):
@@ -690,7 +759,7 @@ class DataProcessingGUI:
                 
                 # 读取Excel
                 self.update_progress(20, "正在读取Excel文件...")
-                df = pd.read_excel(input_path)
+                df = self.read_excel_file(input_path)
                 self.log(f"读取Excel: {df.shape[0]}行, {df.shape[1]}列")
                 
                 # 创建Word文档
@@ -746,8 +815,11 @@ class DataProcessingGUI:
                 # 转换为DataFrame
                 self.update_progress(80, "正在转换为Excel...")
                 df = pd.DataFrame(data[1:], columns=data[0])
-                df.to_excel(output_path, index=False)
-                self.log(f"Word转Excel完成: {output_path}")
+                
+                if self.save_excel_file(df, output_path):
+                    self.log(f"Word转Excel完成: {output_path}")
+                else:
+                    raise Exception("保存Excel文件失败")
             
             self.update_progress(100, "转换完成")
             self.stop_indeterminate("转换完成", success=True)
@@ -792,7 +864,7 @@ class DataProcessingGUI:
             
             # 读取文件
             self.update_progress(10, "正在读取文件...")
-            df = pd.read_excel(file_path)
+            df = self.read_excel_file(file_path)
             
             if column_name not in df.columns:
                 raise Exception(f"列 '{column_name}' 不存在")
@@ -811,11 +883,14 @@ class DataProcessingGUI:
                 self.check_cancel()
                 safe_name = re.sub(r'[\\/*?:"<>|]', '_', str(name))
                 output_path = os.path.join(output_dir, f"{safe_name}.xlsx")
-                group.to_excel(output_path, index=False)
                 
-                progress = 20 + ((i + 1) / total_groups) * 70
-                self.update_progress(progress, f"正在保存: {safe_name}.xlsx ({i+1}/{total_groups})")
-                self.log(f"已保存: {safe_name}.xlsx ({len(group)}行)")
+                # 使用智能保存方法
+                if self.save_excel_file(group, output_path):
+                    progress = 20 + ((i + 1) / total_groups) * 70
+                    self.update_progress(progress, f"正在保存: {safe_name}.xlsx ({i+1}/{total_groups})")
+                    self.log(f"已保存: {safe_name}.xlsx ({len(group)}行)")
+                else:
+                    raise Exception(f"保存文件失败: {safe_name}.xlsx")
             
             self.update_progress(100, "拆分完成")
             self.log(f"拆分完成！共生成 {total_groups} 个文件")
@@ -880,11 +955,8 @@ class DataProcessingGUI:
                 progress = (i / total_files) * 100
                 self.update_progress(progress, f"正在处理 {i+1}/{total_files}: {file_name}")
                 
-                # 读取文件
-                if file_name.endswith('.csv'):
-                    df = pd.read_csv(file_path)
-                else:
-                    df = pd.read_excel(file_path)
+                # 使用智能读取方法
+                df = self.read_excel_file(file_path)
                 
                 # 执行操作
                 if operation == "clean":
@@ -895,12 +967,12 @@ class DataProcessingGUI:
                 
                 # 保存处理后的文件
                 output_path = os.path.join(output_dir, f"processed_{file_name}")
-                if file_name.endswith('.csv'):
-                    df.to_csv(output_path, index=False)
-                else:
-                    df.to_excel(output_path, index=False)
                 
-                self.log(f"已处理: {file_name}")
+                # 使用智能保存方法
+                if self.save_excel_file(df, output_path):
+                    self.log(f"已处理: {file_name}")
+                else:
+                    self.log(f"处理失败: {file_name}")
             
             self.update_progress(100, "批量处理完成")
             self.log(f"批量处理完成！处理了 {total_files} 个文件")
