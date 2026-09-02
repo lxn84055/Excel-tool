@@ -6,6 +6,7 @@ import threading
 from datetime import datetime
 import re
 import csv
+import time
 
 class DataProcessingGUI:
     def __init__(self, root):
@@ -62,6 +63,8 @@ class DataProcessingGUI:
         
         # 初始化处理状态
         self.is_processing = False
+        self.last_log_time = 0
+        self.log_interval = 0.1  # 日志更新间隔（秒）
         
         # 设置窗口最小大小
         self.root.minsize(800, 600)
@@ -69,26 +72,50 @@ class DataProcessingGUI:
         # 设置窗口居中
         self.center_window()
     
+    def log(self, message):
+        """添加日志，限制更新频率避免卡顿"""
+        current_time = time.time()
+        if current_time - self.last_log_time < self.log_interval and not message.startswith("错误"):
+            # 太频繁的日志暂时跳过
+            return
+        
+        self.last_log_time = current_time
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
+        self.log_text.see(tk.END)
+        self.root.update_idletasks()  # 使用update_idletasks代替update，减少卡顿
+    
+    def update_progress(self, value, status_text=None, force_update=False):
+        """更新进度条，减少更新频率"""
+        current_time = time.time()
+        if not force_update and current_time - self.last_progress_time < 0.05:
+            # 限制进度条更新频率
+            return
+        
+        self.last_progress_time = current_time
+        self.progress_var.set(value)
+        self.progress_label.config(text=f"{int(value)}%")
+        if status_text:
+            self.status_label.config(text=status_text)
+        self.root.update_idletasks()
+    
     def read_csv_file_robust(self, file_path):
-        """使用最宽容的方式读取CSV文件"""
+        """使用最宽容的方式读取CSV文件，保持数据格式"""
         self.log("使用宽容模式读取CSV文件...")
         
-        # 方法1: 使用csv模块手动读取，处理不规则行
         try:
-            self.log("尝试使用csv模块手动解析...")
-            rows = []
-            max_columns = 0
-            
             # 检测文件编码
             encoding = self.detect_file_encoding(file_path)
             self.log(f"检测到文件编码: {encoding}")
             
+            # 读取所有行
+            rows = []
+            max_columns = 0
+            
             with open(file_path, 'r', encoding=encoding, errors='ignore') as f:
-                # 尝试自动检测分隔符
+                # 检测分隔符
                 sample = f.read(4096)
                 f.seek(0)
-                
-                # 检测分隔符
                 delimiter = self.detect_delimiter(sample)
                 self.log(f"检测到分隔符: {delimiter}")
                 
@@ -109,92 +136,39 @@ class DataProcessingGUI:
             processed_rows = []
             for i, row in enumerate(rows):
                 if len(row) < max_columns:
-                    # 补齐缺少的列
                     row = row + [''] * (max_columns - len(row))
                 elif len(row) > max_columns:
-                    # 截断多余的列
                     row = row[:max_columns]
                 processed_rows.append(row)
             
-            # 创建DataFrame
+            # 创建DataFrame，保持原始数据类型
             if len(processed_rows) > 1:
-                # 第一行作为列名
                 columns = processed_rows[0]
                 data = processed_rows[1:]
-                df = pd.DataFrame(data, columns=columns)
+                
+                # 使用dtype=object保持原始格式
+                df = pd.DataFrame(data, columns=columns, dtype=object)
+                
+                # 尝试转换数值列，但保持原始格式
+                for col in df.columns:
+                    try:
+                        # 尝试转换为数值，如果失败保持字符串
+                        df[col] = pd.to_numeric(df[col], errors='ignore')
+                    except:
+                        pass
             else:
-                # 只有一行数据
-                df = pd.DataFrame(processed_rows)
+                df = pd.DataFrame(processed_rows, dtype=object)
             
             self.log(f"成功读取CSV文件: {df.shape[0]}行, {df.shape[1]}列")
             return df
             
         except Exception as e:
             self.log(f"csv模块读取失败: {str(e)}")
-        
-        # 方法2: 使用pandas的宽容参数
-        try:
-            self.log("尝试使用pandas宽容参数读取...")
-            df = pd.read_csv(
-                file_path,
-                encoding='utf-8',
-                on_bad_lines='skip',
-                engine='python',
-                error_bad_lines=False,
-                warn_bad_lines=False,
-                quoting=csv.QUOTE_ALL,  # 处理所有字段
-                skip_blank_lines=True,
-                encoding_errors='ignore'
-            )
-            if len(df) > 0:
-                self.log(f"pandas宽容模式成功: {df.shape[0]}行, {df.shape[1]}列")
-                return df
-        except Exception as e:
-            self.log(f"pandas宽容模式失败: {str(e)}")
-        
-        # 方法3: 逐行读取并修复
-        try:
-            self.log("尝试逐行读取并修复...")
-            rows = []
-            encoding = self.detect_file_encoding(file_path)
-            
-            with open(file_path, 'r', encoding=encoding, errors='ignore') as f:
-                lines = f.readlines()
-            
-            # 获取第一行作为列名
-            if lines:
-                first_line = lines[0].strip()
-                columns = self.split_csv_line(first_line)
-                self.log(f"检测到 {len(columns)} 列")
-                
-                # 处理其余行
-                for line_num, line in enumerate(lines[1:], 2):
-                    line = line.strip()
-                    if line:
-                        try:
-                            row_data = self.split_csv_line(line)
-                            if len(row_data) < len(columns):
-                                row_data += [''] * (len(columns) - len(row_data))
-                            elif len(row_data) > len(columns):
-                                row_data = row_data[:len(columns)]
-                            rows.append(row_data)
-                        except Exception as e:
-                            self.log(f"跳过第{line_num}行: {str(e)}")
-                            continue
-            
-            if rows:
-                df = pd.DataFrame(rows, columns=columns)
-                self.log(f"逐行读取成功: {df.shape[0]}行, {df.shape[1]}列")
-                return df
-                
-        except Exception as e:
-            self.log(f"逐行读取失败: {str(e)}")
-        
-        raise Exception("所有CSV读取方法都失败")
+            raise e
     
     def detect_file_encoding(self, file_path):
         """检测文件编码"""
-        encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312', 'gb18030', 'big5', 'latin1', 'iso-8859-1']
+        encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312', 'gb18030', 'big5', 'latin1']
         
         for encoding in encodings:
             try:
@@ -204,153 +178,68 @@ class DataProcessingGUI:
             except:
                 continue
         
-        return 'latin1'  # 默认使用latin1，它能读取任何字节
+        return 'latin1'
     
     def detect_delimiter(self, sample_text):
         """检测CSV分隔符"""
-        # 常见分隔符
-        delimiters = [',', ';', '\t', '|', ' ']
+        delimiters = [',', ';', '\t', '|']
         
-        # 统计每种分隔符出现的次数
         counts = {}
         for delimiter in delimiters:
             counts[delimiter] = sample_text.count(delimiter)
         
-        # 选择出现次数最多的分隔符
         if counts:
             max_delimiter = max(counts, key=counts.get)
             if counts[max_delimiter] > 0:
                 return max_delimiter
         
-        return ','  # 默认使用逗号
-    
-    def split_csv_line(self, line):
-        """手动分割CSV行，处理引号内的分隔符"""
-        result = []
-        current_field = []
-        in_quotes = False
-        
-        for char in line:
-            if char == '"':
-                in_quotes = not in_quotes
-                current_field.append(char)
-            elif char in [',', ';', '\t', '|'] and not in_quotes:
-                result.append(''.join(current_field).strip().strip('"'))
-                current_field = []
-            else:
-                current_field.append(char)
-        
-        # 添加最后一个字段
-        result.append(''.join(current_field).strip().strip('"'))
-        
-        return result
-    
-    def read_csv_file(self, file_path):
-        """读取CSV文件，使用多种策略"""
-        self.log(f"开始读取CSV文件: {os.path.basename(file_path)}")
-        
-        # 首先尝试使用宽容的读取方法
-        try:
-            return self.read_csv_file_robust(file_path)
-        except Exception as e:
-            self.log(f"宽容读取失败: {str(e)}")
-        
-        # 如果宽容方法失败，尝试pandas默认方法
-        encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312', 'gb18030', 'big5', 'latin1']
-        
-        for encoding in encodings:
-            try:
-                self.log(f"尝试使用pandas读取，编码: {encoding}")
-                df = pd.read_csv(
-                    file_path,
-                    encoding=encoding,
-                    on_bad_lines='skip',
-                    engine='python',
-                    error_bad_lines=False,
-                    warn_bad_lines=False
-                )
-                if len(df) > 0:
-                    self.log(f"pandas读取成功: {df.shape[0]}行, {df.shape[1]}列")
-                    return df
-            except Exception as e:
-                self.log(f"编码 {encoding} 失败: {str(e)}")
-                continue
-        
-        raise Exception(f"无法读取CSV文件: {file_path}")
+        return ','
     
     def read_excel_file(self, file_path):
         """智能读取文件，自动判断文件类型"""
         try:
             file_extension = os.path.splitext(file_path)[1].lower()
-            self.log(f"读取文件: {os.path.basename(file_path)} (格式: {file_extension})")
             
             if file_extension == '.csv':
-                # CSV文件使用专门的读取方法
-                return self.read_csv_file(file_path)
+                return self.read_csv_file_robust(file_path)
             
             elif file_extension == '.xlsx':
-                # .xlsx文件使用openpyxl引擎
-                self.log("使用openpyxl引擎读取Excel文件")
-                return pd.read_excel(file_path, engine='openpyxl')
+                # 保持原始数据类型
+                return pd.read_excel(file_path, engine='openpyxl', dtype=object)
             
             elif file_extension == '.xls':
-                # .xls文件使用xlrd引擎
-                self.log("使用xlrd引擎读取Excel文件")
                 try:
-                    return pd.read_excel(file_path, engine='xlrd')
+                    return pd.read_excel(file_path, engine='xlrd', dtype=object)
                 except:
-                    self.log("xlrd引擎失败，尝试openpyxl")
-                    return pd.read_excel(file_path, engine='openpyxl')
-            
-            elif file_extension == '.xlsm':
-                # .xlsm文件使用openpyxl引擎
-                self.log("使用openpyxl引擎读取Excel文件")
-                return pd.read_excel(file_path, engine='openpyxl')
-            
-            elif file_extension == '.xlsb':
-                # .xlsb文件使用pyxlsb引擎
-                self.log("使用pyxlsb引擎读取Excel文件")
-                return pd.read_excel(file_path, engine='pyxlsb')
+                    return pd.read_excel(file_path, engine='openpyxl', dtype=object)
             
             else:
-                # 未知格式，尝试默认读取
-                self.log(f"未知文件格式: {file_extension}，尝试默认读取")
-                try:
-                    return pd.read_csv(file_path, on_bad_lines='skip', engine='python')
-                except:
-                    return pd.read_excel(file_path)
+                return pd.read_excel(file_path, dtype=object)
         
         except Exception as e:
             self.log(f"读取文件失败: {str(e)}")
             raise e
     
     def save_excel_file(self, df, file_path):
-        """智能保存文件，自动判断文件类型"""
+        """智能保存文件，保持数据格式"""
         try:
             file_extension = os.path.splitext(file_path)[1].lower()
-            self.log(f"保存文件: {os.path.basename(file_path)} (格式: {file_extension})")
             
             if file_extension == '.csv':
-                # CSV文件使用to_csv
-                self.log("保存为CSV格式")
+                # CSV保存，保持原始格式
                 df.to_csv(file_path, index=False, encoding='utf-8-sig')
                 return True
             
             elif file_extension == '.xlsx':
-                # .xlsx文件使用openpyxl引擎
-                self.log("保存为Excel格式（openpyxl）")
+                # Excel保存
                 df.to_excel(file_path, index=False, engine='openpyxl')
                 return True
             
             elif file_extension == '.xls':
-                # .xls文件使用xlwt引擎
-                self.log("保存为Excel格式（xlwt）")
                 df.to_excel(file_path, index=False, engine='xlwt')
                 return True
             
             else:
-                # 默认保存为Excel格式
-                self.log("保存为Excel格式（默认）")
                 df.to_excel(file_path, index=False, engine='openpyxl')
                 return True
         
@@ -426,6 +315,7 @@ class DataProcessingGUI:
         self.cancel_button.grid(row=2, column=2, padx=10)
         
         self.cancel_flag = False
+        self.last_progress_time = 0
     
     def create_log_area(self):
         """创建日志显示区域"""
@@ -442,20 +332,18 @@ class DataProcessingGUI:
         """清除日志"""
         self.log_text.delete(1.0, tk.END)
     
-    def log(self, message):
-        """添加日志"""
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
-        self.log_text.see(tk.END)
-        self.root.update()
-    
-    def update_progress(self, value, status_text=None):
-        """更新进度条"""
+    def update_progress(self, value, status_text=None, force_update=False):
+        """更新进度条，减少更新频率避免卡顿"""
+        current_time = time.time()
+        if not force_update and current_time - self.last_progress_time < 0.1:
+            return
+        
+        self.last_progress_time = current_time
         self.progress_var.set(value)
         self.progress_label.config(text=f"{int(value)}%")
         if status_text:
             self.status_label.config(text=status_text)
-        self.root.update()
+        self.root.update_idletasks()
     
     def start_indeterminate(self, status_text="处理中..."):
         """启动不确定进度条"""
@@ -465,7 +353,7 @@ class DataProcessingGUI:
         self.cancel_button.config(state='normal')
         self.cancel_flag = False
         self.is_processing = True
-        self.root.update()
+        self.root.update_idletasks()
     
     def stop_indeterminate(self, status_text="完成", success=True):
         """停止不确定进度条"""
@@ -479,7 +367,7 @@ class DataProcessingGUI:
             self.status_label.config(text=status_text, foreground="red")
         self.cancel_button.config(state='disabled')
         self.is_processing = False
-        self.root.update()
+        self.root.update_idletasks()
     
     def cancel_operation(self):
         """取消操作"""
@@ -825,23 +713,23 @@ class DataProcessingGUI:
         try:
             self.start_indeterminate("正在合并文件...")
             self.log("开始合并文件...")
-            self.log(f"要合并的文件数量: {len(files)}")
-            
-            # 重置进度
-            self.progress_var.set(0)
-            self.progress_label.config(text="0%")
             
             # 读取所有文件
             dfs = []
             total_files = len(files)
+            
             for i, file in enumerate(files):
                 self.check_cancel()
-                self.log(f"读取文件 {i+1}/{total_files}: {os.path.basename(file)}")
+                
+                # 减少日志输出频率
+                if i == 0 or i == total_files - 1 or i % 5 == 0:
+                    self.log(f"读取文件 {i+1}/{total_files}: {os.path.basename(file)}")
+                
+                # 更新进度，但限制更新频率
                 self.update_progress((i / total_files) * 50, f"读取文件 {i+1}/{total_files}")
                 
                 # 使用智能读取方法
                 df = self.read_excel_file(file)
-                self.log(f"成功读取 {os.path.basename(file)}: {df.shape[0]}行, {df.shape[1]}列")
                 
                 # 添加数据来源列
                 if self.add_source_var.get():
@@ -850,35 +738,28 @@ class DataProcessingGUI:
                 dfs.append(df)
             
             self.check_cancel()
-            self.update_progress(60, "正在合并数据...")
-            self.log("正在合并数据...")
+            self.update_progress(60, "正在合并数据...", force_update=True)
             
             # 合并数据
             merge_type = self.merge_type.get()
             if merge_type == "vertical":
                 merged_df = pd.concat(dfs, ignore_index=True)
-                self.log(f"垂直合并完成，总行数: {len(merged_df)}")
             else:
                 merged_df = pd.concat(dfs, axis=1)
-                self.log(f"水平合并完成，总列数: {len(merged_df.columns)}")
             
-            self.update_progress(80, "正在处理数据...")
+            self.update_progress(80, "正在处理数据...", force_update=True)
             
             # 去除重复行
             if self.remove_dup_var.get():
                 self.check_cancel()
-                original_count = len(merged_df)
                 merged_df = merged_df.drop_duplicates()
-                removed_count = original_count - len(merged_df)
-                self.log(f"去除重复行: {removed_count}行")
             
             self.check_cancel()
-            self.update_progress(90, "正在保存结果...")
-            self.log("正在保存结果...")
+            self.update_progress(90, "正在保存结果...", force_update=True)
             
             # 使用智能保存方法
             if self.save_excel_file(merged_df, output_path):
-                self.update_progress(100, "合并完成")
+                self.update_progress(100, "合并完成", force_update=True)
                 self.log(f"合并完成！结果已保存到: {output_path}")
                 self.log(f"合并后数据: {len(merged_df)}行, {len(merged_df.columns)}列")
                 
@@ -920,41 +801,38 @@ class DataProcessingGUI:
             self.log(f"开始清理文件: {os.path.basename(file_path)}")
             
             # 读取文件
-            self.update_progress(10, "正在读取文件...")
+            self.update_progress(10, "正在读取文件...", force_update=True)
             df = self.read_excel_file(file_path)
-            original_shape = df.shape
-            self.log(f"原始数据: {original_shape[0]}行, {original_shape[1]}列")
+            
+            # 记录原始格式
+            original_dtypes = df.dtypes.to_dict()
             
             # 去除重复行
             if self.remove_duplicates.get():
                 self.check_cancel()
                 self.update_progress(30, "正在去除重复行...")
-                before_count = len(df)
                 df = df.drop_duplicates()
-                self.log(f"去除重复行: {before_count - len(df)}行")
             
-            # 填充空值
+            # 填充空值（保持原始格式）
             if self.fill_na.get():
                 self.check_cancel()
                 self.update_progress(50, "正在填充空值...")
                 fill_value = self.fill_value.get()
                 if fill_value == "":
-                    fill_value = None
+                    fill_value = ''
                 df = df.fillna(fill_value)
-                self.log("填充空值完成")
             
-            # 去除首尾空格
+            # 去除首尾空格（只对字符串列操作）
             if self.strip_spaces.get():
                 self.check_cancel()
                 self.update_progress(70, "正在去除空格...")
                 for col in df.columns:
                     if df[col].dtype == 'object':
-                        df[col] = df[col].str.strip()
-                self.log("去除首尾空格完成")
+                        df[col] = df[col].astype(str).str.strip()
             
             # 保存清理后的文件
             self.check_cancel()
-            self.update_progress(90, "正在保存文件...")
+            self.update_progress(90, "正在保存文件...", force_update=True)
             
             # 根据原文件格式生成输出文件名
             file_ext = os.path.splitext(file_path)[1].lower()
@@ -964,10 +842,8 @@ class DataProcessingGUI:
                 output_path = file_path.replace('.xlsx', '_cleaned.xlsx').replace('.xls', '_cleaned.xlsx')
             
             if self.save_excel_file(df, output_path):
-                self.update_progress(100, "清理完成")
-                self.log(f"清理完成！")
-                self.log(f"清理后数据: {df.shape[0]}行, {df.shape[1]}列")
-                self.log(f"结果已保存到: {output_path}")
+                self.update_progress(100, "清理完成", force_update=True)
+                self.log(f"清理完成！结果已保存到: {output_path}")
                 
                 self.stop_indeterminate("清理完成", success=True)
                 messagebox.showinfo("成功", f"清理完成！\n输出文件: {output_path}\n清理后数据: {df.shape[0]}行, {df.shape[1]}列")
@@ -1009,19 +885,17 @@ class DataProcessingGUI:
         try:
             convert_type = self.convert_type.get()
             self.start_indeterminate("正在转换...")
-            self.log(f"开始转换: {convert_type}")
             
             if convert_type == "excel_to_word":
                 from docx import Document
                 
                 # 读取文件
-                self.update_progress(20, "正在读取文件...")
+                self.update_progress(20, "正在读取文件...", force_update=True)
                 df = self.read_excel_file(input_path)
-                self.log(f"读取文件: {df.shape[0]}行, {df.shape[1]}列")
                 
                 # 创建Word文档
                 self.check_cancel()
-                self.update_progress(50, "正在创建Word文档...")
+                self.update_progress(50, "正在创建Word文档...", force_update=True)
                 doc = Document()
                 doc.add_heading('数据转换结果', level=1)
                 
@@ -1034,19 +908,27 @@ class DataProcessingGUI:
                 for i, col in enumerate(df.columns):
                     header_cells[i].text = str(col)
                 
-                # 添加数据
+                # 添加数据（批量处理，减少进度更新）
                 total_rows = len(df)
+                batch_size = max(1, total_rows // 10)  # 每10%更新一次
+                
                 for idx, (_, row) in enumerate(df.iterrows()):
                     self.check_cancel()
-                    if idx % 10 == 0:  # 每10行更新一次进度
-                        progress = 50 + (idx / total_rows) * 40
-                        self.update_progress(progress, f"正在转换数据 {idx}/{total_rows}")
                     
                     row_cells = table.add_row().cells
                     for i, value in enumerate(row):
-                        row_cells[i].text = str(value)
+                        # 保持原始格式
+                        if pd.isna(value):
+                            row_cells[i].text = ''
+                        else:
+                            row_cells[i].text = str(value)
+                    
+                    # 批量更新进度
+                    if idx % batch_size == 0:
+                        progress = 50 + (idx / total_rows) * 40
+                        self.update_progress(progress, f"正在转换数据 {idx}/{total_rows}")
                 
-                self.update_progress(90, "正在保存Word文件...")
+                self.update_progress(90, "正在保存Word文件...", force_update=True)
                 doc.save(output_path)
                 self.log(f"转换完成: {output_path}")
                 
@@ -1054,7 +936,7 @@ class DataProcessingGUI:
                 from docx import Document
                 
                 # 读取Word
-                self.update_progress(30, "正在读取Word文件...")
+                self.update_progress(30, "正在读取Word文件...", force_update=True)
                 doc = Document(input_path)
                 
                 # 获取第一个表格
@@ -1062,7 +944,7 @@ class DataProcessingGUI:
                     raise Exception("Word文档中没有表格")
                 
                 self.check_cancel()
-                self.update_progress(60, "正在提取表格数据...")
+                self.update_progress(60, "正在提取表格数据...", force_update=True)
                 table = doc.tables[0]
                 data = []
                 for row in table.rows:
@@ -1070,7 +952,7 @@ class DataProcessingGUI:
                     data.append(row_data)
                 
                 # 转换为DataFrame
-                self.update_progress(80, "正在转换为Excel...")
+                self.update_progress(80, "正在转换为Excel...", force_update=True)
                 df = pd.DataFrame(data[1:], columns=data[0])
                 
                 if self.save_excel_file(df, output_path):
@@ -1078,7 +960,7 @@ class DataProcessingGUI:
                 else:
                     raise Exception("保存文件失败")
             
-            self.update_progress(100, "转换完成")
+            self.update_progress(100, "转换完成", force_update=True)
             self.stop_indeterminate("转换完成", success=True)
             messagebox.showinfo("成功", f"转换完成！\n输出文件: {output_path}")
             
@@ -1117,12 +999,10 @@ class DataProcessingGUI:
     def split_thread(self, file_path, column_name, output_dir):
         try:
             self.start_indeterminate("正在拆分数据...")
-            self.log(f"开始拆分文件: {os.path.basename(file_path)}")
             
             # 读取文件
-            self.update_progress(10, "正在读取文件...")
+            self.update_progress(10, "正在读取文件...", force_update=True)
             df = self.read_excel_file(file_path)
-            self.log(f"读取文件: {df.shape[0]}行, {df.shape[1]}列")
             
             if column_name not in df.columns:
                 raise Exception(f"列 '{column_name}' 不存在")
@@ -1130,29 +1010,24 @@ class DataProcessingGUI:
             # 创建输出目录
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
-                self.log(f"创建输出目录: {output_dir}")
             
             # 按列拆分
             groups = df.groupby(column_name)
             total_groups = len(groups)
-            
-            self.update_progress(20, f"正在拆分数据，共{total_groups}组...")
-            self.log(f"共发现 {total_groups} 个不同的值")
             
             for i, (name, group) in enumerate(groups):
                 self.check_cancel()
                 safe_name = re.sub(r'[\\/*?:"<>|]', '_', str(name))
                 output_path = os.path.join(output_dir, f"{safe_name}.xlsx")
                 
-                # 使用智能保存方法
+                # 保存分组数据
                 if self.save_excel_file(group, output_path):
-                    progress = 20 + ((i + 1) / total_groups) * 70
-                    self.update_progress(progress, f"正在保存: {safe_name}.xlsx ({i+1}/{total_groups})")
-                    self.log(f"已保存: {safe_name}.xlsx ({len(group)}行)")
-                else:
-                    raise Exception(f"保存文件失败: {safe_name}.xlsx")
+                    # 减少进度更新频率
+                    if i % max(1, total_groups // 20) == 0:
+                        progress = 20 + ((i + 1) / total_groups) * 70
+                        self.update_progress(progress, f"正在保存: {safe_name}.xlsx ({i+1}/{total_groups})")
             
-            self.update_progress(100, "拆分完成")
+            self.update_progress(100, "拆分完成", force_update=True)
             self.log(f"拆分完成！共生成 {total_groups} 个文件")
             
             self.stop_indeterminate("拆分完成", success=True)
@@ -1187,7 +1062,6 @@ class DataProcessingGUI:
     def batch_thread(self, directory):
         try:
             self.start_indeterminate("正在批量处理...")
-            self.log(f"开始批量处理: {directory}")
             
             # 获取所有支持的文件
             excel_files = [f for f in os.listdir(directory) 
@@ -1203,45 +1077,37 @@ class DataProcessingGUI:
             output_dir = os.path.join(directory, 'processed')
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
-                self.log(f"创建输出目录: {output_dir}")
             
             operation = self.batch_operation.get()
             total_files = len(excel_files)
             
-            self.log(f"找到 {total_files} 个文件")
-            
             for i, file_name in enumerate(excel_files):
                 self.check_cancel()
                 file_path = os.path.join(directory, file_name)
-                self.log(f"处理文件 {i+1}/{total_files}: {file_name}")
                 
+                # 减少日志输出
+                if i % 5 == 0 or i == total_files - 1:
+                    self.log(f"处理文件 {i+1}/{total_files}: {file_name}")
+                
+                # 更新进度
                 progress = (i / total_files) * 100
-                self.update_progress(progress, f"正在处理 {i+1}/{total_files}: {file_name}")
+                self.update_progress(progress, f"正在处理 {i+1}/{total_files}")
                 
                 # 使用智能读取方法
                 df = self.read_excel_file(file_path)
                 
                 # 执行操作
                 if operation == "clean":
-                    before_count = len(df)
                     df = df.drop_duplicates()
                     df = df.fillna('')
-                    self.log(f"清理: 去除重复行 {before_count - len(df)}行")
                 elif operation == "remove_empty":
-                    before_count = len(df)
                     df = df.dropna()
-                    self.log(f"去除空行: {before_count - len(df)}行")
                 
                 # 保存处理后的文件
                 output_path = os.path.join(output_dir, f"processed_{file_name}")
-                
-                # 使用智能保存方法
-                if self.save_excel_file(df, output_path):
-                    self.log(f"已处理: {file_name}")
-                else:
-                    self.log(f"处理失败: {file_name}")
+                self.save_excel_file(df, output_path)
             
-            self.update_progress(100, "批量处理完成")
+            self.update_progress(100, "批量处理完成", force_update=True)
             self.log(f"批量处理完成！处理了 {total_files} 个文件")
             
             self.stop_indeterminate("批量处理完成", success=True)
