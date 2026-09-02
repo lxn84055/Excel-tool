@@ -27,14 +27,14 @@ class DataProcessingGUI:
         
         # 创建主框架（放在Canvas中）
         self.main_frame = ttk.Frame(self.main_canvas, padding="10")
-        self.main_canvas.create_window((0, 0), window=self.main_frame, anchor="nw")
+        self.canvas_window = self.main_canvas.create_window((0, 0), window=self.main_frame, anchor="nw")
         
         # 绑定配置事件
         self.main_frame.bind("<Configure>", self.on_frame_configure)
         self.main_canvas.bind("<Configure>", self.on_canvas_configure)
         
         # 绑定鼠标滚轮事件
-        self.bind_mousewheel()
+        self.bind_mousewheel_recursive(root)
         
         # 创建标签页
         self.notebook = ttk.Notebook(self.main_frame)
@@ -74,34 +74,34 @@ class DataProcessingGUI:
     
     def on_canvas_configure(self, event):
         """调整Canvas中窗口的宽度"""
-        self.main_canvas.itemconfig(1, width=event.width)
+        self.main_canvas.itemconfig(self.canvas_window, width=event.width)
     
-    def bind_mousewheel(self):
-        """绑定鼠标滚轮事件"""
-        # Windows和Linux
-        self.main_canvas.bind("<MouseWheel>", self.on_mousewheel)
-        # macOS
-        self.main_canvas.bind("<Button-4>", self.on_mousewheel)
-        self.main_canvas.bind("<Button-5>", self.on_mousewheel)
+    def bind_mousewheel_recursive(self, widget):
+        """递归绑定鼠标滚轮事件到所有组件"""
+        # 绑定鼠标滚轮事件
+        widget.bind("<MouseWheel>", self.on_mousewheel_windows)
+        widget.bind("<Button-4>", self.on_mousewheel_linux)
+        widget.bind("<Button-5>", self.on_mousewheel_linux)
         
-        # 绑定到所有子组件
-        self.bind_children_mousewheel(self.root)
-    
-    def bind_children_mousewheel(self, widget):
-        """递归绑定鼠标滚轮到所有子组件"""
-        widget.bind("<MouseWheel>", self.on_mousewheel)
-        widget.bind("<Button-4>", self.on_mousewheel)
-        widget.bind("<Button-5>", self.on_mousewheel)
-        
+        # 递归绑定到所有子组件
         for child in widget.winfo_children():
-            self.bind_children_mousewheel(child)
+            self.bind_mousewheel_recursive(child)
     
-    def on_mousewheel(self, event):
-        """处理鼠标滚轮事件"""
-        if event.num == 4 or event.delta > 0:
-            self.main_canvas.yview_scroll(-1, "units")
-        elif event.num == 5 or event.delta < 0:
-            self.main_canvas.yview_scroll(1, "units")
+    def on_mousewheel_windows(self, event):
+        """Windows鼠标滚轮事件"""
+        if event.delta > 0:
+            self.main_canvas.yview_scroll(-3, "units")
+        else:
+            self.main_canvas.yview_scroll(3, "units")
+        return "break"  # 阻止事件传递
+    
+    def on_mousewheel_linux(self, event):
+        """Linux鼠标滚轮事件"""
+        if event.num == 4:
+            self.main_canvas.yview_scroll(-3, "units")
+        elif event.num == 5:
+            self.main_canvas.yview_scroll(3, "units")
+        return "break"  # 阻止事件传递
     
     def center_window(self):
         """窗口居中"""
@@ -149,12 +149,9 @@ class DataProcessingGUI:
         log_frame = ttk.LabelFrame(self.main_frame, text="操作日志", padding="5")
         log_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=10)
         
-        # 日志文本框和滚动条
-        log_container = ttk.Frame(log_frame)
-        log_container.grid(row=0, column=0, sticky=(tk.W, tk.E))
-        
-        self.log_text = scrolledtext.ScrolledText(log_container, height=5, width=100)
-        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # 日志文本框
+        self.log_text = scrolledtext.ScrolledText(log_frame, height=5, width=100)
+        self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E))
         
         # 清除日志按钮
         clear_btn = ttk.Button(log_frame, text="清除日志", command=self.clear_log)
