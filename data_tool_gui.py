@@ -71,6 +71,19 @@ class DataProcessingGUI:
         
         # 设置窗口居中
         self.center_window()
+        
+        # 保存所有可交互的控件
+        self.interactive_widgets = []
+        self.collect_interactive_widgets()
+    
+    def collect_interactive_widgets(self):
+        """收集所有可交互的控件"""
+        for widget in self.get_all_widgets(self.main_frame):
+            if isinstance(widget, (ttk.Button, ttk.Entry, ttk.Checkbutton, 
+                                  ttk.Radiobutton, ttk.Combobox, tk.Listbox,
+                                  ttk.Scale, ttk.Spinbox)):
+                if widget != self.cancel_button:
+                    self.interactive_widgets.append(widget)
     
     def lock_interface(self):
         """锁定界面，禁止所有操作（除了取消按钮）"""
@@ -80,24 +93,21 @@ class DataProcessingGUI:
         for tab_id in self.notebook.tabs():
             self.notebook.tab(tab_id, state='disabled')
         
-        # 禁用所有按钮（除了取消按钮）
-        for widget in self.get_all_widgets(self.main_frame):
-            if isinstance(widget, ttk.Button) and widget != self.cancel_button:
+        # 禁用所有交互控件
+        for widget in self.interactive_widgets:
+            try:
                 widget.config(state='disabled')
-            elif isinstance(widget, ttk.Entry):
-                widget.config(state='disabled')
-            elif isinstance(widget, ttk.Checkbutton):
-                widget.config(state='disabled')
-            elif isinstance(widget, ttk.Radiobutton):
-                widget.config(state='disabled')
-            elif isinstance(widget, tk.Listbox):
-                widget.config(state='disabled')
+            except:
+                pass
         
-        # 禁用滚动
-        self.main_canvas.unbind("<MouseWheel>")
-        self.main_canvas.unbind("<Button-4>")
-        self.main_canvas.unbind("<Button-5>")
-        self.main_scrollbar.config(state='disabled')
+        # 禁用滚动条
+        try:
+            self.main_scrollbar.grid_remove()  # 隐藏滚动条
+        except:
+            pass
+        
+        # 禁用鼠标滚轮滚动
+        self.unbind_mousewheel_recursive(self.root)
         
         # 启用取消按钮
         self.cancel_button.config(state='normal')
@@ -110,32 +120,57 @@ class DataProcessingGUI:
         for tab_id in self.notebook.tabs():
             self.notebook.tab(tab_id, state='normal')
         
-        # 启用所有按钮
-        for widget in self.get_all_widgets(self.main_frame):
-            if isinstance(widget, ttk.Button):
-                widget.config(state='normal')
-            elif isinstance(widget, ttk.Entry):
-                widget.config(state='normal')
-            elif isinstance(widget, ttk.Checkbutton):
-                widget.config(state='normal')
-            elif isinstance(widget, ttk.Radiobutton):
-                widget.config(state='normal')
-            elif isinstance(widget, tk.Listbox):
-                widget.config(state='normal')
+        # 启用所有交互控件
+        for widget in self.interactive_widgets:
+            try:
+                if isinstance(widget, ttk.Button):
+                    widget.config(state='normal')
+                elif isinstance(widget, ttk.Entry):
+                    widget.config(state='normal')
+                elif isinstance(widget, ttk.Checkbutton):
+                    widget.config(state='normal')
+                elif isinstance(widget, ttk.Radiobutton):
+                    widget.config(state='normal')
+                elif isinstance(widget, tk.Listbox):
+                    widget.config(state='normal')
+                else:
+                    widget.config(state='normal')
+            except:
+                pass
         
-        # 恢复滚动
+        # 恢复滚动条
+        try:
+            self.main_scrollbar.grid()
+        except:
+            pass
+        
+        # 恢复鼠标滚轮滚动
         self.bind_mousewheel_recursive(self.root)
-        self.main_scrollbar.config(state='normal')
         
         # 禁用取消按钮
         self.cancel_button.config(state='disabled')
     
+    def unbind_mousewheel_recursive(self, widget):
+        """递归解绑鼠标滚轮事件"""
+        try:
+            widget.unbind("<MouseWheel>")
+            widget.unbind("<Button-4>")
+            widget.unbind("<Button-5>")
+        except:
+            pass
+        
+        for child in widget.winfo_children():
+            self.unbind_mousewheel_recursive(child)
+    
     def get_all_widgets(self, parent):
         """递归获取所有子组件"""
         widgets = []
-        for child in parent.winfo_children():
-            widgets.append(child)
-            widgets.extend(self.get_all_widgets(child))
+        try:
+            for child in parent.winfo_children():
+                widgets.append(child)
+                widgets.extend(self.get_all_widgets(child))
+        except:
+            pass
         return widgets
     
     def convert_dtypes_after_processing(self, df):
@@ -418,6 +453,8 @@ class DataProcessingGUI:
         clear_btn.grid(row=1, column=0, pady=5)
     
     def clear_log(self):
+        if self.is_processing:
+            return
         self.log_text.delete(1.0, tk.END)
     
     def log(self, message):
@@ -468,7 +505,7 @@ class DataProcessingGUI:
     def cancel_operation(self):
         self.cancel_flag = True
         self.status_label.config(text="正在取消...", foreground="orange")
-        self.cancel_button.config(state='disabled')  # 禁用取消按钮
+        self.cancel_button.config(state='disabled')
         self.log("用户请求取消操作")
     
     def check_cancel(self):
@@ -665,7 +702,7 @@ class DataProcessingGUI:
         self.batch_button = ttk.Button(batch_frame, text="开始批量处理", command=self.start_batch, width=20)
         self.batch_button.grid(row=2, column=0, columnspan=2, pady=10)
     
-    # 文件选择方法（保持不变）
+    # 文件选择方法
     def add_files(self):
         if self.is_processing:
             return
