@@ -149,6 +149,27 @@ class DataProcessingGUI:
             pass
         return widgets
     
+    def detect_header(self, df):
+        """检测DataFrame是否有列名（表头）"""
+        if df.empty:
+            return False
+        
+        column_names = df.columns.tolist()
+        
+        header_score = 0
+        data_score = 0
+        
+        for col in column_names:
+            col_str = str(col)
+            if re.match(r'^[A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff_\s]*$', col_str):
+                header_score += 1
+            if re.match(r'^\d+$', col_str):
+                data_score += 1
+            elif 'Unnamed' in col_str:
+                data_score += 1
+        
+        return header_score > data_score
+    
     def detect_header_quick(self, file_path):
         """快速检测文件是否有列名（只读取前几行）"""
         try:
@@ -161,7 +182,6 @@ class DataProcessingGUI:
             else:
                 return True
         except Exception as e:
-            self.log(f"快速检测列名失败: {str(e)}")
             return True
     
     def detect_header_csv_quick(self, file_path):
@@ -170,7 +190,6 @@ class DataProcessingGUI:
             encoding = self.detect_file_encoding(file_path)
             
             with open(file_path, 'r', encoding=encoding, errors='ignore') as f:
-                # 只读取前3行
                 lines = []
                 for i, line in enumerate(f):
                     if i >= 3:
@@ -182,29 +201,23 @@ class DataProcessingGUI:
             
             delimiter = self.detect_delimiter(lines[0])
             
-            # 解析第一行和第二行
             first_row = lines[0].split(delimiter)
             second_row = lines[1].split(delimiter) if len(lines) > 1 else None
             
-            # 检查第一行是否像列名
             header_score = 0
             data_score = 0
             
             for cell in first_row:
                 cell = cell.strip().strip('"').strip("'")
-                # 列名特征：包含文字、字母
                 if re.match(r'^[A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff_\s]*$', cell):
                     header_score += 1
-                # 数据特征：纯数字
                 if re.match(r'^\d+$', cell):
                     data_score += 1
             
-            # 如果第二行存在，比较第一行和第二行的数据类型
             if second_row:
                 for cell1, cell2 in zip(first_row, second_row):
                     cell1 = cell1.strip().strip('"').strip("'")
                     cell2 = cell2.strip().strip('"').strip("'")
-                    # 如果第一行是文本，第二行是数字，说明第一行是列名
                     if re.match(r'^[A-Za-z\u4e00-\u9fff]', cell1) and re.match(r'^\d+$', cell2):
                         header_score += 2
             
@@ -218,7 +231,6 @@ class DataProcessingGUI:
         try:
             file_extension = os.path.splitext(file_path)[1].lower()
             
-            # 只读取前3行
             if file_extension == '.xlsx':
                 df = pd.read_excel(file_path, engine='openpyxl', nrows=3, dtype=object)
             else:
@@ -262,7 +274,6 @@ class DataProcessingGUI:
             else:
                 return [], True
         except Exception as e:
-            self.log(f"快速获取列名失败: {str(e)}")
             return [], True
     
     def get_csv_columns_quick(self, file_path, has_header):
@@ -271,7 +282,6 @@ class DataProcessingGUI:
             encoding = self.detect_file_encoding(file_path)
             
             with open(file_path, 'r', encoding=encoding, errors='ignore') as f:
-                # 只读取前几行
                 lines = []
                 for i, line in enumerate(f):
                     if i >= 5:
@@ -284,10 +294,8 @@ class DataProcessingGUI:
             delimiter = self.detect_delimiter(lines[0])
             
             if has_header:
-                # 第一行是列名
                 columns = [c.strip().strip('"').strip("'") for c in lines[0].split(delimiter)]
             else:
-                # 无列名，使用默认列名
                 max_cols = max(len(line.split(delimiter)) for line in lines)
                 columns = [f"列{i+1}" for i in range(max_cols)]
             
@@ -301,7 +309,6 @@ class DataProcessingGUI:
         try:
             file_extension = os.path.splitext(file_path)[1].lower()
             
-            # 只读取前几行
             if file_extension == '.xlsx':
                 df = pd.read_excel(file_path, engine='openpyxl', nrows=5, dtype=object)
             else:
@@ -313,7 +320,6 @@ class DataProcessingGUI:
             if has_header:
                 columns = df.columns.tolist()
             else:
-                # 无列名，使用默认列名
                 max_cols = len(df.columns)
                 columns = [f"列{i+1}" for i in range(max_cols)]
             
@@ -321,27 +327,6 @@ class DataProcessingGUI:
             
         except Exception as e:
             return [], has_header
-    
-    def detect_header(self, df):
-        """检测DataFrame是否有列名（表头）"""
-        if df.empty:
-            return False
-        
-        column_names = df.columns.tolist()
-        
-        header_score = 0
-        data_score = 0
-        
-        for col in column_names:
-            col_str = str(col)
-            if re.match(r'^[A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff_\s]*$', col_str):
-                header_score += 1
-            if re.match(r'^\d+$', col_str):
-                data_score += 1
-            elif 'Unnamed' in col_str:
-                data_score += 1
-        
-        return header_score > data_score
     
     def normalize_columns(self, df, reference_columns=None):
         """统一列名"""
@@ -352,10 +337,8 @@ class DataProcessingGUI:
         
         if len(current_columns) == len(reference_columns):
             if current_columns != reference_columns:
-                self.log(f"统一列名: {current_columns} -> {reference_columns}")
                 df.columns = reference_columns
         else:
-            self.log(f"警告: 列数不一致 (当前: {len(current_columns)}, 参考: {len(reference_columns)})")
             matched_columns = []
             for i in range(min(len(current_columns), len(reference_columns))):
                 matched_columns.append(reference_columns[i])
@@ -460,7 +443,6 @@ class DataProcessingGUI:
             
             return df
         except Exception as e:
-            self.log(f"数据类型转换失败: {str(e)}")
             return df
     
     def is_datetime_column(self, series):
@@ -537,7 +519,6 @@ class DataProcessingGUI:
             return df
             
         except Exception as e:
-            self.log(f"CSV读取失败: {str(e)}")
             raise e
     
     def detect_file_encoding(self, file_path):
@@ -587,7 +568,6 @@ class DataProcessingGUI:
                 return pd.read_excel(file_path, dtype=object)
         
         except Exception as e:
-            self.log(f"读取文件失败: {str(e)}")
             raise e
     
     def save_excel_file(self, df, file_path):
@@ -611,7 +591,6 @@ class DataProcessingGUI:
                 return True
         
         except Exception as e:
-            self.log(f"保存文件失败: {str(e)}")
             return False
     
     def on_frame_configure(self, event):
@@ -892,43 +871,79 @@ class DataProcessingGUI:
         ttk.Button(file_frame, text="浏览", command=self.select_split_file).grid(row=0, column=1)
         ttk.Button(file_frame, text="预览列名", command=self.preview_split_columns).grid(row=0, column=2, padx=5)
         
+        # 拆分方式选择
         method_frame = ttk.LabelFrame(split_frame, text="拆分方式", padding="10")
         method_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
         self.split_method = tk.StringVar(value="by_columns")
         ttk.Radiobutton(method_frame, text="按列值拆分", variable=self.split_method, 
                        value="by_columns", command=self.toggle_split_method).grid(row=0, column=0, padx=10)
+        ttk.Radiobutton(method_frame, text="按列位置拆分", variable=self.split_method, 
+                       value="by_column_position", command=self.toggle_split_method).grid(row=0, column=1, padx=10)
         ttk.Radiobutton(method_frame, text="按行数拆分", variable=self.split_method, 
-                       value="by_rows", command=self.toggle_split_method).grid(row=0, column=1, padx=10)
+                       value="by_rows", command=self.toggle_split_method).grid(row=0, column=2, padx=10)
         ttk.Radiobutton(method_frame, text="按特定行拆分", variable=self.split_method, 
-                       value="by_specific_rows", command=self.toggle_split_method).grid(row=0, column=2, padx=10)
+                       value="by_specific_rows", command=self.toggle_split_method).grid(row=1, column=0, padx=10)
         
-        self.column_split_frame = ttk.LabelFrame(split_frame, text="按列拆分设置", padding="10")
+        # 按列值拆分设置
+        self.column_split_frame = ttk.LabelFrame(split_frame, text="按列值拆分设置", padding="10")
         self.column_split_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
         ttk.Label(self.column_split_frame, text="拆分依据列:").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.split_columns = ttk.Entry(self.column_split_frame, width=50)
         self.split_columns.grid(row=0, column=1, sticky=tk.W, pady=5)
-        ttk.Label(self.column_split_frame, text="(多个列用逗号分隔，如: 部门,地区 或 列1,列2)").grid(row=0, column=2, sticky=tk.W)
+        ttk.Label(self.column_split_frame, text="(多个列用逗号分隔，如: 部门,地区)").grid(row=0, column=2, sticky=tk.W)
         
+        # 按列位置拆分设置
+        self.column_position_frame = ttk.LabelFrame(split_frame, text="按列位置拆分设置", padding="10")
+        self.column_position_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(self.column_position_frame, text="拆分方式:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.column_position_type = tk.StringVar(value="before_after")
+        ttk.Radiobutton(self.column_position_frame, text="前后拆分", variable=self.column_position_type, 
+                       value="before_after", command=self.toggle_column_position_type).grid(row=0, column=1, sticky=tk.W, padx=5)
+        ttk.Radiobutton(self.column_position_frame, text="指定列提取", variable=self.column_position_type, 
+                       value="specific_columns", command=self.toggle_column_position_type).grid(row=0, column=2, sticky=tk.W, padx=5)
+        
+        # 前后拆分设置
+        self.before_after_frame = ttk.Frame(self.column_position_frame)
+        self.before_after_frame.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=5)
+        
+        ttk.Label(self.before_after_frame, text="拆分位置列号:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.split_position = ttk.Entry(self.before_after_frame, width=20)
+        self.split_position.grid(row=0, column=1, sticky=tk.W, pady=5)
+        ttk.Label(self.before_after_frame, text="(例如: 3 表示列1-3拆分为一个文件，列4及以后拆分为另一个文件)").grid(row=0, column=2, sticky=tk.W)
+        
+        # 指定列提取设置
+        self.specific_columns_frame = ttk.Frame(self.column_position_frame)
+        self.specific_columns_frame.grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=5)
+        
+        ttk.Label(self.specific_columns_frame, text="指定列号:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.specific_column_numbers = ttk.Entry(self.specific_columns_frame, width=50)
+        self.specific_column_numbers.grid(row=0, column=1, sticky=tk.W, pady=5)
+        ttk.Label(self.specific_columns_frame, text="(例如: 3,5,10 表示提取第3、5、10列)").grid(row=0, column=2, sticky=tk.W)
+        
+        # 按行数拆分设置
         self.row_split_frame = ttk.LabelFrame(split_frame, text="按行数拆分设置", padding="10")
-        self.row_split_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        self.row_split_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
         ttk.Label(self.row_split_frame, text="每个文件行数:").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.rows_per_file = ttk.Entry(self.row_split_frame, width=20)
         self.rows_per_file.grid(row=0, column=1, sticky=tk.W, pady=5)
         self.rows_per_file.insert(0, "1000")
         
+        # 按特定行拆分设置
         self.specific_row_frame = ttk.LabelFrame(split_frame, text="按特定行拆分设置", padding="10")
-        self.specific_row_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        self.specific_row_frame.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
         ttk.Label(self.specific_row_frame, text="拆分行号:").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.specific_rows = ttk.Entry(self.specific_row_frame, width=50)
         self.specific_rows.grid(row=0, column=1, sticky=tk.W, pady=5)
         ttk.Label(self.specific_row_frame, text="(用逗号分隔行号，如: 100,200,300)").grid(row=0, column=2, sticky=tk.W)
         
+        # 输出设置
         output_frame = ttk.LabelFrame(split_frame, text="输出设置", padding="10")
-        output_frame.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        output_frame.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
         ttk.Label(output_frame, text="输出目录:").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.split_output_dir = tk.StringVar(value="./split_output")
@@ -936,10 +951,13 @@ class DataProcessingGUI:
         ttk.Button(output_frame, text="浏览", command=self.select_split_output).grid(row=0, column=2, padx=5)
         
         self.split_button = ttk.Button(split_frame, text="开始拆分", command=self.start_split, width=20)
-        self.split_button.grid(row=6, column=0, columnspan=3, pady=10)
+        self.split_button.grid(row=7, column=0, columnspan=3, pady=10)
         
+        # 初始隐藏
+        self.column_position_frame.grid_remove()
         self.row_split_frame.grid_remove()
         self.specific_row_frame.grid_remove()
+        self.specific_columns_frame.grid_remove()
     
     def create_batch_tab(self):
         """创建批量处理标签页"""
@@ -969,19 +987,37 @@ class DataProcessingGUI:
         """切换拆分方式"""
         method = self.split_method.get()
         
+        # 隐藏所有设置
         self.column_split_frame.grid_remove()
+        self.column_position_frame.grid_remove()
         self.row_split_frame.grid_remove()
         self.specific_row_frame.grid_remove()
         
+        # 显示选中的设置
         if method == "by_columns":
             self.column_split_frame.grid()
+        elif method == "by_column_position":
+            self.column_position_frame.grid()
+            self.toggle_column_position_type()
         elif method == "by_rows":
             self.row_split_frame.grid()
         elif method == "by_specific_rows":
             self.specific_row_frame.grid()
     
+    def toggle_column_position_type(self):
+        """切换列位置拆分类型"""
+        pos_type = self.column_position_type.get()
+        
+        self.before_after_frame.grid_remove()
+        self.specific_columns_frame.grid_remove()
+        
+        if pos_type == "before_after":
+            self.before_after_frame.grid()
+        elif pos_type == "specific_columns":
+            self.specific_columns_frame.grid()
+    
     def preview_columns(self):
-        """预览统一后的列名（快速读取，只读取表头）"""
+        """预览统一后的列名"""
         if self.is_processing:
             return
         
@@ -991,7 +1027,6 @@ class DataProcessingGUI:
             return
         
         try:
-            # 快速获取参考列名（只读取表头）
             reference_columns = None
             
             for file in files:
@@ -1001,11 +1036,9 @@ class DataProcessingGUI:
                     break
             
             if reference_columns is None:
-                # 所有文件都没有列名，使用默认列名
                 columns, _ = self.get_columns_quick(files[0])
                 reference_columns = columns if columns else [f"列{i+1}" for i in range(10)]
             
-            # 创建预览窗口
             preview_window = tk.Toplevel(self.root)
             preview_window.title("列名预览 - 点击列名添加到选择")
             preview_window.geometry("500x600")
@@ -1091,7 +1124,7 @@ class DataProcessingGUI:
             messagebox.showerror("错误", f"读取文件失败: {str(e)}")
     
     def preview_split_columns(self):
-        """预览拆分文件的列名（快速读取）"""
+        """预览拆分文件的列名"""
         if self.is_processing:
             return
         
@@ -1158,31 +1191,12 @@ class DataProcessingGUI:
                 self.log(f"已添加拆分列: {', '.join(selected_columns)}")
                 messagebox.showinfo("成功", f"已添加 {len(selected_columns)} 个列名到拆分依据列")
             
-            def add_all_columns():
-                all_columns = [re.sub(r'^\d+\.\s*', '', columns_listbox.get(idx)) 
-                              for idx in range(columns_listbox.size())]
-                
-                if all_columns:
-                    new_text = ', '.join(all_columns)
-                    self.split_columns.delete(0, tk.END)
-                    self.split_columns.insert(0, new_text)
-                    
-                    self.log(f"已添加所有列名: {len(all_columns)}个")
-                    messagebox.showinfo("成功", f"已添加所有 {len(all_columns)} 个列名")
-            
             ttk.Button(button_frame, text="添加选中列名", 
                       command=add_selected_columns).pack(side=tk.LEFT, padx=5)
             ttk.Button(button_frame, text="添加所有列名", 
-                      command=add_all_columns).pack(side=tk.LEFT, padx=5)
+                      command=lambda: None).pack(side=tk.LEFT, padx=5)
             ttk.Button(button_frame, text="关闭", 
                       command=preview_window.destroy).pack(side=tk.LEFT, padx=5)
-            
-            def on_double_click(event):
-                selection = columns_listbox.curselection()
-                if selection:
-                    add_selected_columns()
-            
-            columns_listbox.bind('<Double-Button-1>', on_double_click)
             
         except Exception as e:
             messagebox.showerror("错误", f"读取文件失败: {str(e)}")
@@ -1380,7 +1394,7 @@ class DataProcessingGUI:
     def update_file_types(self):
         pass
     
-    # 处理功能方法（与之前相同，但读取文件时使用完整读取）
+    # 处理功能方法
     def start_merge(self):
         if self.is_processing:
             return
@@ -1404,7 +1418,6 @@ class DataProcessingGUI:
             self.start_indeterminate("正在合并文件...")
             self.log("开始合并文件...")
             
-            # 获取参考列名
             reference_columns = None
             
             for file in files:
@@ -1441,7 +1454,6 @@ class DataProcessingGUI:
                 
                 self.update_progress((i / total_files) * 40, f"读取文件 {i+1}/{total_files}")
                 
-                # 完整读取文件
                 df = self.read_excel_file(file)
                 has_header = self.detect_header(df)
                 
@@ -1453,15 +1465,12 @@ class DataProcessingGUI:
                     else:
                         df = self.read_excel_without_header(file)
                 
-                # 统一列名
                 df = self.normalize_columns(df, reference_columns)
                 
-                # 选择特定列
                 if selected_columns:
                     available_columns = [col for col in selected_columns if col in df.columns]
                     df = df[available_columns]
                 
-                # 去除空白数据
                 if self.remove_blank_rows_var.get() or self.remove_blank_cols_var.get() or self.remove_blank_cells_var.get():
                     df = self.remove_blank_data(
                         df,
@@ -1470,7 +1479,6 @@ class DataProcessingGUI:
                         remove_blank_cells=self.remove_blank_cells_var.get()
                     )
                 
-                # 添加数据来源列
                 if self.add_source_var.get():
                     df['数据来源'] = os.path.basename(file)
                 
@@ -1584,7 +1592,6 @@ class DataProcessingGUI:
         df = self.read_excel_file(input_path)
         
         if not self.detect_header(df):
-            self.log("文件没有列名，使用默认列名")
             file_extension = os.path.splitext(input_path)[1].lower()
             if file_extension == '.csv':
                 df = self.read_csv_without_header(input_path)
@@ -1671,7 +1678,6 @@ class DataProcessingGUI:
             df = self.read_excel_file(input_path)
             
             if not self.detect_header(df):
-                self.log("文件没有列名，使用默认列名")
                 file_extension = os.path.splitext(input_path)[1].lower()
                 if file_extension == '.csv':
                     df = self.read_csv_without_header(input_path)
@@ -1712,20 +1718,18 @@ class DataProcessingGUI:
             self.log(f"Excel转PDF完成: {output_path}")
             
         except ImportError:
-            self.log("缺少必要的库，请安装: pip install reportlab openpyxl")
             raise Exception("缺少必要的库: reportlab")
     
     def convert_excel_to_ppt(self, input_path, output_path):
         """Excel转PPT"""
         try:
             from pptx import Presentation
-            from pptx.util import Inches, Pt
+            from pptx.util import Inches
             
             self.update_progress(20, "正在读取Excel文件...", force_update=True)
             df = self.read_excel_file(input_path)
             
             if not self.detect_header(df):
-                self.log("文件没有列名，使用默认列名")
                 file_extension = os.path.splitext(input_path)[1].lower()
                 if file_extension == '.csv':
                     df = self.read_csv_without_header(input_path)
@@ -1781,7 +1785,6 @@ class DataProcessingGUI:
             self.log(f"Excel转PPT完成: {output_path}")
             
         except ImportError:
-            self.log("缺少必要的库，请安装: pip install python-pptx")
             raise Exception("缺少必要的库: python-pptx")
     
     def convert_word_to_pdf(self, input_path, output_path):
@@ -1821,7 +1824,6 @@ class DataProcessingGUI:
             self.log(f"Word转PDF完成: {output_path}")
             
         except ImportError:
-            self.log("缺少必要的库，请安装: pip install docx2pdf reportlab")
             raise Exception("缺少必要的库: docx2pdf 或 reportlab")
     
     def convert_ppt_to_pdf(self, input_path, output_path):
@@ -1874,7 +1876,6 @@ class DataProcessingGUI:
             self.log(f"PPT转PDF完成: {output_path}")
             
         except ImportError:
-            self.log("缺少必要的库，请安装: pip install pywin32 python-pptx reportlab")
             raise Exception("缺少必要的库: pywin32 或 python-pptx")
     
     def start_split(self):
@@ -1898,7 +1899,6 @@ class DataProcessingGUI:
             df = self.read_excel_file(file_path)
             
             if not self.detect_header(df):
-                self.log("文件没有列名，使用默认列名")
                 file_extension = os.path.splitext(file_path)[1].lower()
                 if file_extension == '.csv':
                     df = self.read_csv_without_header(file_path)
@@ -1916,6 +1916,8 @@ class DataProcessingGUI:
             
             if split_method == "by_columns":
                 self.split_by_columns(df, output_dir)
+            elif split_method == "by_column_position":
+                self.split_by_column_position(df, output_dir)
             elif split_method == "by_rows":
                 self.split_by_rows(df, output_dir)
             elif split_method == "by_specific_rows":
@@ -1970,6 +1972,87 @@ class DataProcessingGUI:
                     self.log(f"已保存: {safe_name}.xlsx ({len(group)}行)")
         
         self.log(f"按列拆分完成！共生成 {total_groups} 个文件")
+    
+    def split_by_column_position(self, df, output_dir):
+        """按列位置拆分"""
+        pos_type = self.column_position_type.get()
+        
+        if pos_type == "before_after":
+            # 前后拆分
+            try:
+                split_pos = int(self.split_position.get().strip())
+                if split_pos < 1 or split_pos >= len(df.columns):
+                    raise ValueError(f"拆分位置必须在1到{len(df.columns)-1}之间")
+            except ValueError as e:
+                raise Exception(f"无效的拆分位置: {e}")
+            
+            self.log(f"按列位置前后拆分: 列1-{split_pos} 和 列{split_pos+1}-{len(df.columns)}")
+            
+            # 前半部分（列1到split_pos）
+            df_before = df.iloc[:, :split_pos]
+            output_path_before = os.path.join(output_dir, f"列1-{split_pos}.xlsx")
+            
+            self.check_cancel()
+            if self.save_excel_file(df_before, output_path_before):
+                self.update_progress(50, f"已保存: 列1-{split_pos}.xlsx")
+                self.log(f"已保存: 列1-{split_pos}.xlsx ({len(df_before)}行, {len(df_before.columns)}列)")
+            
+            # 后半部分（列split_pos+1到最后）
+            df_after = df.iloc[:, split_pos:]
+            output_path_after = os.path.join(output_dir, f"列{split_pos+1}-{len(df.columns)}.xlsx")
+            
+            self.check_cancel()
+            if self.save_excel_file(df_after, output_path_after):
+                self.update_progress(100, f"已保存: 列{split_pos+1}-{len(df.columns)}.xlsx")
+                self.log(f"已保存: 列{split_pos+1}-{len(df.columns)}.xlsx ({len(df_after)}行, {len(df_after.columns)}列)")
+            
+            self.log("按列位置前后拆分完成！共生成 2 个文件")
+            
+        elif pos_type == "specific_columns":
+            # 指定列提取
+            columns_str = self.specific_column_numbers.get().strip()
+            if not columns_str:
+                raise Exception("请输入指定列号")
+            
+            try:
+                column_indices = []
+                for part in columns_str.split(','):
+                    part = part.strip()
+                    if '-' in part:
+                        start, end = part.split('-')
+                        column_indices.extend(range(int(start), int(end) + 1))
+                    else:
+                        column_indices.append(int(part))
+                
+                # 去重并排序
+                column_indices = sorted(set(column_indices))
+                
+                # 验证列号
+                valid_indices = [i for i in column_indices if 1 <= i <= len(df.columns)]
+                invalid_indices = [i for i in column_indices if i < 1 or i > len(df.columns)]
+                
+                if invalid_indices:
+                    self.log(f"警告: 无效列号: {invalid_indices}")
+                
+                if not valid_indices:
+                    raise Exception("没有有效的列号")
+                
+            except ValueError:
+                raise Exception("无效的列号格式")
+            
+            self.log(f"按指定列提取: 列 {valid_indices}")
+            
+            # 提取指定列（列号从1开始，转换为0-based索引）
+            df_specific = df.iloc[:, [i-1 for i in valid_indices]]
+            
+            output_path = os.path.join(output_dir, f"指定列_{'_'.join(map(str, valid_indices))}.xlsx")
+            
+            self.check_cancel()
+            if self.save_excel_file(df_specific, output_path):
+                self.update_progress(100, f"已保存: 指定列_{'_'.join(map(str, valid_indices))}.xlsx")
+                self.log(f"已保存: 指定列_{'_'.join(map(str, valid_indices))}.xlsx ({len(df_specific)}行, {len(df_specific.columns)}列)")
+            
+            self.log("按指定列提取完成！共生成 1 个文件")
     
     def split_by_rows(self, df, output_dir):
         """按行数拆分"""
@@ -2085,7 +2168,6 @@ class DataProcessingGUI:
                 df = self.read_excel_file(file_path)
                 
                 if not self.detect_header(df):
-                    self.log(f"文件 {file_name} 没有列名，使用默认列名")
                     file_extension = os.path.splitext(file_path)[1].lower()
                     if file_extension == '.csv':
                         df = self.read_csv_without_header(file_path)
