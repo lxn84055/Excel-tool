@@ -149,6 +149,179 @@ class DataProcessingGUI:
             pass
         return widgets
     
+    def detect_header_quick(self, file_path):
+        """快速检测文件是否有列名（只读取前几行）"""
+        try:
+            file_extension = os.path.splitext(file_path)[1].lower()
+            
+            if file_extension == '.csv':
+                return self.detect_header_csv_quick(file_path)
+            elif file_extension in ['.xlsx', '.xls']:
+                return self.detect_header_excel_quick(file_path)
+            else:
+                return True
+        except Exception as e:
+            self.log(f"快速检测列名失败: {str(e)}")
+            return True
+    
+    def detect_header_csv_quick(self, file_path):
+        """快速检测CSV文件是否有列名"""
+        try:
+            encoding = self.detect_file_encoding(file_path)
+            
+            with open(file_path, 'r', encoding=encoding, errors='ignore') as f:
+                # 只读取前3行
+                lines = []
+                for i, line in enumerate(f):
+                    if i >= 3:
+                        break
+                    lines.append(line.strip())
+            
+            if not lines:
+                return False
+            
+            delimiter = self.detect_delimiter(lines[0])
+            
+            # 解析第一行和第二行
+            first_row = lines[0].split(delimiter)
+            second_row = lines[1].split(delimiter) if len(lines) > 1 else None
+            
+            # 检查第一行是否像列名
+            header_score = 0
+            data_score = 0
+            
+            for cell in first_row:
+                cell = cell.strip().strip('"').strip("'")
+                # 列名特征：包含文字、字母
+                if re.match(r'^[A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff_\s]*$', cell):
+                    header_score += 1
+                # 数据特征：纯数字
+                if re.match(r'^\d+$', cell):
+                    data_score += 1
+            
+            # 如果第二行存在，比较第一行和第二行的数据类型
+            if second_row:
+                for cell1, cell2 in zip(first_row, second_row):
+                    cell1 = cell1.strip().strip('"').strip("'")
+                    cell2 = cell2.strip().strip('"').strip("'")
+                    # 如果第一行是文本，第二行是数字，说明第一行是列名
+                    if re.match(r'^[A-Za-z\u4e00-\u9fff]', cell1) and re.match(r'^\d+$', cell2):
+                        header_score += 2
+            
+            return header_score > data_score
+            
+        except Exception as e:
+            return True
+    
+    def detect_header_excel_quick(self, file_path):
+        """快速检测Excel文件是否有列名（只读取前几行）"""
+        try:
+            file_extension = os.path.splitext(file_path)[1].lower()
+            
+            # 只读取前3行
+            if file_extension == '.xlsx':
+                df = pd.read_excel(file_path, engine='openpyxl', nrows=3, dtype=object)
+            else:
+                try:
+                    df = pd.read_excel(file_path, engine='xlrd', nrows=3, dtype=object)
+                except:
+                    df = pd.read_excel(file_path, engine='openpyxl', nrows=3, dtype=object)
+            
+            if df.empty:
+                return False
+            
+            column_names = df.columns.tolist()
+            
+            header_score = 0
+            data_score = 0
+            
+            for col in column_names:
+                col_str = str(col)
+                if re.match(r'^[A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff_\s]*$', col_str):
+                    header_score += 1
+                if re.match(r'^\d+$', col_str):
+                    data_score += 1
+                elif 'Unnamed' in col_str:
+                    data_score += 1
+            
+            return header_score > data_score
+            
+        except Exception as e:
+            return True
+    
+    def get_columns_quick(self, file_path):
+        """快速获取列名（只读取表头）"""
+        try:
+            file_extension = os.path.splitext(file_path)[1].lower()
+            has_header = self.detect_header_quick(file_path)
+            
+            if file_extension == '.csv':
+                return self.get_csv_columns_quick(file_path, has_header)
+            elif file_extension in ['.xlsx', '.xls']:
+                return self.get_excel_columns_quick(file_path, has_header)
+            else:
+                return [], True
+        except Exception as e:
+            self.log(f"快速获取列名失败: {str(e)}")
+            return [], True
+    
+    def get_csv_columns_quick(self, file_path, has_header):
+        """快速获取CSV列名"""
+        try:
+            encoding = self.detect_file_encoding(file_path)
+            
+            with open(file_path, 'r', encoding=encoding, errors='ignore') as f:
+                # 只读取前几行
+                lines = []
+                for i, line in enumerate(f):
+                    if i >= 5:
+                        break
+                    lines.append(line.strip())
+            
+            if not lines:
+                return [], has_header
+            
+            delimiter = self.detect_delimiter(lines[0])
+            
+            if has_header:
+                # 第一行是列名
+                columns = [c.strip().strip('"').strip("'") for c in lines[0].split(delimiter)]
+            else:
+                # 无列名，使用默认列名
+                max_cols = max(len(line.split(delimiter)) for line in lines)
+                columns = [f"列{i+1}" for i in range(max_cols)]
+            
+            return columns, has_header
+            
+        except Exception as e:
+            return [], has_header
+    
+    def get_excel_columns_quick(self, file_path, has_header):
+        """快速获取Excel列名"""
+        try:
+            file_extension = os.path.splitext(file_path)[1].lower()
+            
+            # 只读取前几行
+            if file_extension == '.xlsx':
+                df = pd.read_excel(file_path, engine='openpyxl', nrows=5, dtype=object)
+            else:
+                try:
+                    df = pd.read_excel(file_path, engine='xlrd', nrows=5, dtype=object)
+                except:
+                    df = pd.read_excel(file_path, engine='openpyxl', nrows=5, dtype=object)
+            
+            if has_header:
+                columns = df.columns.tolist()
+            else:
+                # 无列名，使用默认列名
+                max_cols = len(df.columns)
+                columns = [f"列{i+1}" for i in range(max_cols)]
+            
+            return columns, has_header
+            
+        except Exception as e:
+            return [], has_header
+    
     def detect_header(self, df):
         """检测DataFrame是否有列名（表头）"""
         if df.empty:
@@ -808,7 +981,7 @@ class DataProcessingGUI:
             self.specific_row_frame.grid()
     
     def preview_columns(self):
-        """预览统一后的列名"""
+        """预览统一后的列名（快速读取，只读取表头）"""
         if self.is_processing:
             return
         
@@ -818,55 +991,48 @@ class DataProcessingGUI:
             return
         
         try:
-            # 获取参考列名（从第一个有列名的文件）
+            # 快速获取参考列名（只读取表头）
             reference_columns = None
             
             for file in files:
-                df = self.read_excel_file(file)
-                if self.detect_header(df):
-                    reference_columns = df.columns.tolist()
+                columns, has_header = self.get_columns_quick(file)
+                if has_header:
+                    reference_columns = columns
                     break
             
             if reference_columns is None:
                 # 所有文件都没有列名，使用默认列名
-                first_df = self.read_excel_file(files[0])
-                reference_columns = [f"列{i+1}" for i in range(len(first_df.columns))]
+                columns, _ = self.get_columns_quick(files[0])
+                reference_columns = columns if columns else [f"列{i+1}" for i in range(10)]
             
             # 创建预览窗口
             preview_window = tk.Toplevel(self.root)
             preview_window.title("列名预览 - 点击列名添加到选择")
             preview_window.geometry("500x600")
             
-            # 提示标签
             tip_label = ttk.Label(preview_window, 
                                  text="点击列名可添加到'按列名选择'输入框，支持多选",
                                  foreground="blue")
             tip_label.pack(pady=10)
             
-            # 创建列名列表框架
             list_frame = ttk.Frame(preview_window)
             list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
             
-            # 创建Listbox显示列名
             columns_listbox = tk.Listbox(list_frame, selectmode=tk.MULTIPLE, 
                                         height=20, width=60)
             columns_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
             
-            # 添加滚动条
             scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=columns_listbox.yview)
             scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
             columns_listbox.configure(yscrollcommand=scrollbar.set)
             
-            # 填充统一后的列名
             for i, col in enumerate(reference_columns, 1):
                 columns_listbox.insert(tk.END, f"{i}. {col}")
             
-            # 按钮框架
             button_frame = ttk.Frame(preview_window)
             button_frame.pack(pady=10)
             
             def add_selected_columns():
-                """添加选中的列名到输入框"""
                 selected_indices = columns_listbox.curselection()
                 if not selected_indices:
                     messagebox.showwarning("警告", "请先选择列名")
@@ -896,7 +1062,6 @@ class DataProcessingGUI:
                 messagebox.showinfo("成功", f"已添加 {len(selected_columns)} 个列名到选择框")
             
             def add_all_columns():
-                """添加所有列名到输入框"""
                 all_columns = [re.sub(r'^\d+\.\s*', '', columns_listbox.get(idx)) 
                               for idx in range(columns_listbox.size())]
                 
@@ -926,7 +1091,7 @@ class DataProcessingGUI:
             messagebox.showerror("错误", f"读取文件失败: {str(e)}")
     
     def preview_split_columns(self):
-        """预览拆分文件的列名"""
+        """预览拆分文件的列名（快速读取）"""
         if self.is_processing:
             return
         
@@ -936,18 +1101,7 @@ class DataProcessingGUI:
             return
         
         try:
-            df = self.read_excel_file(file_path)
-            has_header = self.detect_header(df)
-            
-            if not has_header:
-                # 无列名，使用默认列名
-                file_extension = os.path.splitext(file_path)[1].lower()
-                if file_extension == '.csv':
-                    df = self.read_csv_without_header(file_path)
-                else:
-                    df = self.read_excel_without_header(file_path)
-            
-            columns = df.columns.tolist()
+            columns, has_header = self.get_columns_quick(file_path)
             
             preview_window = tk.Toplevel(self.root)
             preview_window.title("列名预览 - 点击列名添加到拆分依据")
@@ -1226,7 +1380,7 @@ class DataProcessingGUI:
     def update_file_types(self):
         pass
     
-    # 处理功能方法
+    # 处理功能方法（与之前相同，但读取文件时使用完整读取）
     def start_merge(self):
         if self.is_processing:
             return
@@ -1250,19 +1404,19 @@ class DataProcessingGUI:
             self.start_indeterminate("正在合并文件...")
             self.log("开始合并文件...")
             
-            # 获取参考列名（从第一个有列名的文件）
+            # 获取参考列名
             reference_columns = None
             
             for file in files:
-                df = self.read_excel_file(file)
-                if self.detect_header(df):
-                    reference_columns = df.columns.tolist()
+                columns, has_header = self.get_columns_quick(file)
+                if has_header:
+                    reference_columns = columns
                     self.log(f"使用文件 {os.path.basename(file)} 的列名作为参考")
                     break
             
             if reference_columns is None:
-                first_df = self.read_excel_file(files[0])
-                reference_columns = [f"列{i+1}" for i in range(len(first_df.columns))]
+                columns, _ = self.get_columns_quick(files[0])
+                reference_columns = columns if columns else [f"列{i+1}" for i in range(10)]
                 self.log("所有文件都没有列名，使用默认列名")
             
             self.log(f"参考列名: {reference_columns}")
@@ -1287,6 +1441,7 @@ class DataProcessingGUI:
                 
                 self.update_progress((i / total_files) * 40, f"读取文件 {i+1}/{total_files}")
                 
+                # 完整读取文件
                 df = self.read_excel_file(file)
                 has_header = self.detect_header(df)
                 
