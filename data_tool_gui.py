@@ -451,66 +451,6 @@ class DataProcessingGUI:
         
         return df
     
-    def convert_dtypes_after_processing(self, df):
-        """处理后将文本形式的数字转换为数字类型，但保留日期时间"""
-        try:
-            for col in df.columns:
-                if df[col].dtype in ['int64', 'float64', 'datetime64[ns]', 'Int64', 'Float64']:
-                    continue
-                
-                if self.is_datetime_column(df[col]):
-                    continue
-                
-                try:
-                    numeric_values = pd.to_numeric(df[col], errors='coerce')
-                    non_null_count = df[col].notna().sum()
-                    numeric_count = numeric_values.notna().sum()
-                    
-                    if numeric_count > non_null_count * 0.8:
-                        if (numeric_values.dropna() == numeric_values.dropna().astype(int)).all():
-                            df[col] = numeric_values.astype('Int64')
-                        else:
-                            df[col] = numeric_values
-                except:
-                    pass
-            
-            return df
-        except Exception as e:
-            return df
-    
-    def is_datetime_column(self, series):
-        """检查列是否包含日期时间数据"""
-        try:
-            sample = series.dropna().head(100)
-            if len(sample) == 0:
-                return False
-            
-            if pd.api.types.is_datetime64_any_dtype(series):
-                return True
-            
-            datetime_count = 0
-            for value in sample:
-                if isinstance(value, (datetime, pd.Timestamp)):
-                    datetime_count += 1
-                elif isinstance(value, str):
-                    date_patterns = [
-                        r'\d{4}-\d{2}-\d{2}',
-                        r'\d{4}/\d{2}/\d{2}',
-                        r'\d{2}-\d{2}-\d{4}',
-                        r'\d{2}/\d{2}/\d{4}',
-                        r'\d{4}年\d{1,2}月\d{1,2}日',
-                        r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}',
-                        r'\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}',
-                    ]
-                    for pattern in date_patterns:
-                        if re.search(pattern, value):
-                            datetime_count += 1
-                            break
-            
-            return datetime_count > len(sample) * 0.5
-        except:
-            return False
-    
     def read_csv_file_robust(self, file_path):
         """读取CSV文件"""
         try:
@@ -606,7 +546,6 @@ class DataProcessingGUI:
     def save_excel_file(self, df, file_path):
         """保存文件，保持列头不变"""
         try:
-            # 不再自动转换数据类型，保持原始格式
             file_extension = os.path.splitext(file_path)[1].lower()
             
             if file_extension == '.csv':
@@ -710,6 +649,8 @@ class DataProcessingGUI:
         """创建说明按钮"""
         self.help_button_frame = ttk.Frame(self.main_frame)
         ttk.Button(self.help_button_frame, text="📖 功能说明", command=self.show_help).pack(side=tk.LEFT, padx=5)
+        ttk.Button(self.help_button_frame, text="📐 公式说明", command=self.show_formula_help).pack(side=tk.LEFT, padx=5)
+        ttk.Button(self.help_button_frame, text="🔍 功能搜索", command=self.show_search).pack(side=tk.LEFT, padx=5)
     
     def show_help(self):
         """显示功能说明"""
@@ -720,7 +661,15 @@ class DataProcessingGUI:
         help_text = scrolledtext.ScrolledText(help_window, width=80, height=35)
         help_text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
         
-        help_content = """
+        help_content = self.get_help_content()
+        help_text.insert(tk.END, help_content)
+        help_text.config(state='disabled')
+        
+        ttk.Button(help_window, text="关闭", command=help_window.destroy).pack(pady=10)
+    
+    def get_help_content(self):
+        """获取帮助内容"""
+        return """
 ╔══════════════════════════════════════════════════════════════╗
 ║                    功能使用说明                                ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -736,41 +685,59 @@ class DataProcessingGUI:
 5. 指定输出文件路径
 6. 点击"开始合并"
 
-示例：
-- 垂直合并：文件A（100行） + 文件B（50行） = 150行
-- 水平合并：文件A（5列） + 文件B（3列） = 8列
+示例1 - 垂直合并：
+文件A（100行，5列）+ 文件B（50行，5列）= 150行，5列
+
+示例2 - 水平合并：
+文件A（100行，5列）+ 文件B（100行，3列）= 100行，8列
+
+示例3 - 选择特定列：
+按列名：姓名,年龄,工资
+按列号：1,3,5（选择第1、3、5列）
+范围：1-5（选择第1到第5列）
+
 
 【二、格式转换】
 功能：在不同格式之间转换数据
 
 支持格式：
-- Excel/CSV → Word
-- Excel/CSV → PDF
-- Excel/CSV → PPT
-- Excel/CSV → TXT（文本文件）
-- Word → Excel
-- Word → PDF
-- PPT → PDF
+- Excel/CSV → Word（表格形式）
+- Excel/CSV → PDF（表格形式）
+- Excel/CSV → PPT（幻灯片表格）
+- Excel/CSV → TXT（制表符分隔文本）
+- Word → Excel（提取表格）
+- Word → PDF（文档转换）
+- PPT → PDF（幻灯片转换）
+
+示例：
+Excel转TXT：将表格数据保存为制表符分隔的文本文件，
+可用记事本打开，也可导入其他系统
+
 
 【三、数据拆分】
 功能：将一个大文件拆分为多个小文件
 
-拆分方式：
-1. 按列值拆分：根据某列的不同值拆分
-   示例：按"部门"列拆分 → 销售部.xlsx、技术部.xlsx
+拆分方式1 - 按列值拆分：
+根据某列的不同值拆分
+示例：按"部门"列拆分 → 销售部.xlsx、技术部.xlsx
 
-2. 按列位置拆分：
-   - 前后拆分：按列号拆分
-     示例：输入3 → 列1-3.xlsx、列4-最后.xlsx
-     多列：输入3,7,9 → 列1-3.xlsx、列4-7.xlsx、列8-9.xlsx、列10-最后.xlsx
-   - 指定列提取：只提取指定列
-     示例：输入3,5,10 → 只包含第3、5、10列
+拆分方式2 - 按列位置拆分：
+  前后拆分（支持多列）：
+    单列：输入3 → 列1-3.xlsx、列4-最后.xlsx
+    多列：输入3,7,9 → 列1-3.xlsx、列4-7.xlsx、列8-9.xlsx、列10-最后.xlsx
+  
+  指定列提取：
+    输入3,5,10 → 只包含第3、5、10列的.xlsx
+    范围：1-5 → 第1到第5列
 
-3. 按行数拆分：每N行一个文件
-   示例：输入1000 → 每1000行一个文件
+拆分方式3 - 按行数拆分：
+每N行一个文件
+示例：输入1000 → 每1000行一个文件
 
-4. 按特定行拆分：在指定行号处拆分
-   示例：输入100,200 → 第1-100行、第101-200行、第201-最后
+拆分方式4 - 按特定行拆分：
+在指定行号处拆分
+示例：输入100,200 → 第1-100行、第101-200行、第201-最后
+
 
 【四、批量处理】
 功能：批量处理文件夹中的所有Excel/CSV文件
@@ -778,7 +745,8 @@ class DataProcessingGUI:
 处理选项：
 1. 清理数据：去重+去空白
 2. 去除空行：删除所有空行
-3. 公式转纯数值：将公式计算结果转为数值
+3. 公式转数值：将公式计算结果转为纯数值（列头不变）
+
 
 【五、预览列名】
 功能：快速查看文件列名，支持点击选择
@@ -787,27 +755,8 @@ class DataProcessingGUI:
 - 支持多选
 - 双击快速添加
 
-【六、公式转纯数值说明】
-功能：将Excel中的公式计算结果转换为纯数值
 
-使用场景：
-- 公式 =A1+B1 计算结果为 100
-- 转换后：直接存储 100（不再保留公式）
-
-示例：
-原始数据：=SUM(A1:A10) → 计算结果 500
-转换后：500（纯数值）
-
-【七、文本格式（TXT）说明】
-功能：将数据保存为制表符分隔的文本文件
-
-特点：
-- 使用Tab分隔符
-- UTF-8编码
-- 可用记事本打开
-- 可导入其他系统
-
-【八、常见问题】
+【六、常见问题】
 Q: 文件没有列名怎么办？
 A: 程序会自动检测，无列名时使用"列1、列2..."作为默认列名
 
@@ -820,11 +769,191 @@ A: 程序使用多线程处理，界面不会冻结
 Q: 如何取消处理？
 A: 处理过程中点击"取消"按钮
         """
+    
+    def show_formula_help(self):
+        """显示公式说明"""
+        formula_window = tk.Toplevel(self.root)
+        formula_window.title("公式使用说明")
+        formula_window.geometry("700x600")
         
-        help_text.insert(tk.END, help_content)
-        help_text.config(state='disabled')
+        formula_text = scrolledtext.ScrolledText(formula_window, width=80, height=35)
+        formula_text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
         
-        ttk.Button(help_window, text="关闭", command=help_window.destroy).pack(pady=10)
+        formula_content = """
+╔══════════════════════════════════════════════════════════════╗
+║                    公式使用说明                                ║
+╚══════════════════════════════════════════════════════════════╝
+
+【一、常见Excel公式】
+
+1. 求和公式
+   =SUM(A1:A10)
+   功能：计算A1到A10的总和
+   示例：=SUM(B2:B50) 计算B2到B50的总和
+
+2. 平均值公式
+   =AVERAGE(A1:A10)
+   功能：计算A1到A10的平均值
+   示例：=AVERAGE(C2:C30) 计算C2到C30的平均值
+
+3. 最大值/最小值
+   =MAX(A1:A10)  最大值
+   =MIN(A1:A10)  最小值
+   示例：=MAX(D2:D100) 找出D2到D100中的最大值
+
+4. 计数公式
+   =COUNT(A1:A10)  数字计数
+   =COUNTA(A1:A10) 非空计数
+   =COUNTIF(A1:A10, ">50") 条件计数
+   示例：=COUNTIF(E2:E100, "完成") 统计"完成"的数量
+
+5. 条件公式
+   =IF(A1>50, "通过", "不通过")
+   功能：如果A1>50显示"通过"，否则显示"不通过"
+   示例：=IF(B2>=60, "及格", "不及格")
+
+6. 查找公式
+   =VLOOKUP(A1, B1:D100, 2, FALSE)
+   功能：在B1:D100中查找A1的值，返回第2列
+   示例：=VLOOKUP(E2, A2:B50, 2, FALSE)
+
+7. 文本公式
+   =CONCATENATE(A1, B1)  合并文本
+   =LEFT(A1, 3)  取左边3个字符
+   =RIGHT(A1, 2) 取右边2个字符
+   =MID(A1, 2, 3) 从第2个字符开始取3个
+   示例：=CONCATENATE("姓名：", A2)
+
+8. 日期公式
+   =TODAY()  今天日期
+   =NOW()  当前日期时间
+   =YEAR(A1)  取年份
+   =MONTH(A1) 取月份
+   =DAY(A1)  取日期
+   示例：=YEAR(TODAY()) 当前年份
+
+
+【二、公式转数值功能说明】
+
+功能：将Excel中的公式计算结果转换为纯数值
+
+使用场景：
+- 公式 =A1+B1 计算结果为 100
+- 转换后：直接存储 100（不再保留公式）
+
+优点：
+- 减小文件大小
+- 提高打开速度
+- 避免公式引用错误
+- 便于数据分享
+
+使用位置：
+批量处理 → 公式转数值
+
+
+【三、Word中的公式】
+
+Word表格中的公式：
+=SUM(ABOVE)  上方求和
+=SUM(LEFT)  左侧求和
+=AVERAGE(ABOVE) 上方平均值
+=MAX(ABOVE)  上方最大值
+=MIN(ABOVE)  上方最小值
+
+注意：Word公式功能有限，建议使用Excel进行复杂计算
+        """
+        
+        formula_text.insert(tk.END, formula_content)
+        formula_text.config(state='disabled')
+        
+        ttk.Button(formula_window, text="关闭", command=formula_window.destroy).pack(pady=10)
+    
+    def show_search(self):
+        """显示功能搜索"""
+        search_window = tk.Toplevel(self.root)
+        search_window.title("功能搜索")
+        search_window.geometry("600x500")
+        
+        # 搜索输入框
+        search_frame = ttk.Frame(search_window)
+        search_frame.pack(pady=10, padx=10, fill=tk.X)
+        
+        ttk.Label(search_frame, text="搜索:").pack(side=tk.LEFT, padx=5)
+        search_entry = ttk.Entry(search_frame, width=40)
+        search_entry.pack(side=tk.LEFT, padx=5)
+        
+        # 结果文本框
+        result_text = scrolledtext.ScrolledText(search_window, width=70, height=20)
+        result_text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+        
+        # 所有功能列表
+        all_functions = [
+            ("数据合并", "将多个Excel/CSV文件合并为一个文件"),
+            ("垂直合并", "按行追加合并文件"),
+            ("水平合并", "按列拼接合并文件"),
+            ("按列名选择", "根据列名选择特定列"),
+            ("按列号选择", "根据列号选择特定列"),
+            ("去除空白行", "删除所有空行"),
+            ("去除空白列", "删除所有空列"),
+            ("去除空白字符", "去除单元格中的空格"),
+            ("格式转换", "在不同格式之间转换数据"),
+            ("Excel转Word", "将Excel数据转为Word表格"),
+            ("Excel转PDF", "将Excel数据转为PDF表格"),
+            ("Excel转PPT", "将Excel数据转为PPT幻灯片"),
+            ("Excel转TXT", "将Excel数据转为文本文件"),
+            ("Word转Excel", "将Word表格转为Excel"),
+            ("Word转PDF", "将Word文档转为PDF"),
+            ("PPT转PDF", "将PPT转为PDF"),
+            ("数据拆分", "将大文件拆分为多个小文件"),
+            ("按列值拆分", "根据列值拆分数据"),
+            ("按列位置拆分", "按列位置拆分数据"),
+            ("前后拆分", "按列位置前后拆分"),
+            ("指定列提取", "只提取指定列"),
+            ("按行数拆分", "每N行一个文件"),
+            ("按特定行拆分", "在指定行号处拆分"),
+            ("批量处理", "批量处理文件夹中的文件"),
+            ("清理数据", "去重+去空白"),
+            ("去除空行", "删除空行"),
+            ("公式转数值", "将公式转为纯数值"),
+            ("预览列名", "查看文件列名"),
+            ("添加来源标识", "标记数据来源文件"),
+            ("去除重复行", "删除重复行"),
+        ]
+        
+        def do_search():
+            """执行搜索"""
+            keyword = search_entry.get().strip().lower()
+            result_text.delete(1.0, tk.END)
+            
+            if not keyword:
+                result_text.insert(tk.END, "请输入搜索关键词\n")
+                return
+            
+            found = False
+            for name, desc in all_functions:
+                if keyword in name.lower() or keyword in desc.lower():
+                    result_text.insert(tk.END, f"▶ {name}\n")
+                    result_text.insert(tk.END, f"  {desc}\n\n")
+                    found = True
+            
+            if not found:
+                result_text.insert(tk.END, f"未找到与 '{keyword}' 相关的功能\n")
+        
+        ttk.Button(search_frame, text="搜索", command=do_search).pack(side=tk.LEFT, padx=5)
+        
+        # 显示所有功能
+        def show_all():
+            result_text.delete(1.0, tk.END)
+            result_text.insert(tk.END, "所有功能列表：\n\n")
+            for name, desc in all_functions:
+                result_text.insert(tk.END, f"▶ {name}\n  {desc}\n\n")
+        
+        ttk.Button(search_frame, text="显示全部", command=show_all).pack(side=tk.LEFT, padx=5)
+        
+        # 初始显示所有功能
+        show_all()
+        
+        ttk.Button(search_window, text="关闭", command=search_window.destroy).pack(pady=10)
     
     def clear_log(self):
         if self.is_processing:
@@ -883,6 +1012,8 @@ A: 处理过程中点击"取消"按钮
     def check_cancel(self):
         if self.cancel_flag:
             raise Exception("操作已被用户取消")
+    
+    # ==================== 以下为各标签页创建方法（省略中间重复代码，与之前相同）====================
     
     def create_merge_tab(self):
         """创建数据合并标签页"""
@@ -1150,6 +1281,8 @@ A: 处理过程中点击"取消"按钮
         elif pos_type == "specific_columns":
             self.specific_columns_frame.grid()
     
+    # ==================== 预览方法（省略与之前相同）====================
+    
     def preview_columns(self):
         """预览统一后的列名"""
         if self.is_processing:
@@ -1173,50 +1306,7 @@ A: 处理过程中点击"取消"按钮
                 columns, _ = self.get_columns_quick(files[0])
                 reference_columns = columns if columns else [f"列{i+1}" for i in range(10)]
             
-            preview_window = tk.Toplevel(self.root)
-            preview_window.title("列名预览")
-            preview_window.geometry("400x500")
-            
-            columns_listbox = tk.Listbox(preview_window, selectmode=tk.MULTIPLE, 
-                                        height=20, width=50)
-            columns_listbox.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
-            
-            for i, col in enumerate(reference_columns, 1):
-                columns_listbox.insert(tk.END, f"{i}. {col}")
-            
-            button_frame = ttk.Frame(preview_window)
-            button_frame.pack(pady=10)
-            
-            def add_selected_columns():
-                selected_indices = columns_listbox.curselection()
-                if not selected_indices:
-                    return
-                
-                selected_columns = []
-                for idx in selected_indices:
-                    display_text = columns_listbox.get(idx)
-                    column_name = re.sub(r'^\d+\.\s*', '', display_text)
-                    selected_columns.append(column_name)
-                
-                current_text = self.columns_by_name.get().strip()
-                
-                if current_text:
-                    existing_columns = [c.strip() for c in current_text.split(',') if c.strip()]
-                    for col in selected_columns:
-                        if col not in existing_columns:
-                            existing_columns.append(col)
-                    new_text = ', '.join(existing_columns)
-                else:
-                    new_text = ', '.join(selected_columns)
-                
-                self.columns_by_name.delete(0, tk.END)
-                self.columns_by_name.insert(0, new_text)
-                preview_window.destroy()
-            
-            ttk.Button(button_frame, text="添加选中列名", 
-                      command=add_selected_columns).pack(side=tk.LEFT, padx=5)
-            ttk.Button(button_frame, text="关闭", 
-                      command=preview_window.destroy).pack(side=tk.LEFT, padx=5)
+            self._show_column_preview(reference_columns, self.columns_by_name)
             
         except Exception as e:
             messagebox.showerror("错误", f"读取文件失败: {str(e)}")
@@ -1233,51 +1323,7 @@ A: 处理过程中点击"取消"按钮
         
         try:
             columns, has_header = self.get_columns_quick(file_path)
-            
-            preview_window = tk.Toplevel(self.root)
-            preview_window.title("列名预览")
-            preview_window.geometry("400x500")
-            
-            columns_listbox = tk.Listbox(preview_window, selectmode=tk.MULTIPLE, 
-                                        height=20, width=50)
-            columns_listbox.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
-            
-            for i, col in enumerate(columns, 1):
-                columns_listbox.insert(tk.END, f"{i}. {col}")
-            
-            button_frame = ttk.Frame(preview_window)
-            button_frame.pack(pady=10)
-            
-            def add_selected_columns():
-                selected_indices = columns_listbox.curselection()
-                if not selected_indices:
-                    return
-                
-                selected_columns = []
-                for idx in selected_indices:
-                    display_text = columns_listbox.get(idx)
-                    column_name = re.sub(r'^\d+\.\s*', '', display_text)
-                    selected_columns.append(column_name)
-                
-                current_text = self.split_columns.get().strip()
-                
-                if current_text:
-                    existing_columns = [c.strip() for c in current_text.split(',') if c.strip()]
-                    for col in selected_columns:
-                        if col not in existing_columns:
-                            existing_columns.append(col)
-                    new_text = ', '.join(existing_columns)
-                else:
-                    new_text = ', '.join(selected_columns)
-                
-                self.split_columns.delete(0, tk.END)
-                self.split_columns.insert(0, new_text)
-                preview_window.destroy()
-            
-            ttk.Button(button_frame, text="添加选中列名", 
-                      command=add_selected_columns).pack(side=tk.LEFT, padx=5)
-            ttk.Button(button_frame, text="关闭", 
-                      command=preview_window.destroy).pack(side=tk.LEFT, padx=5)
+            self._show_column_preview(columns, self.split_columns)
             
         except Exception as e:
             messagebox.showerror("错误", f"读取文件失败: {str(e)}")
@@ -1386,6 +1432,53 @@ A: 处理过程中点击"取消"按钮
         except Exception as e:
             messagebox.showerror("错误", f"读取文件失败: {str(e)}")
     
+    def _show_column_preview(self, columns, target_entry):
+        """通用列名预览窗口"""
+        preview_window = tk.Toplevel(self.root)
+        preview_window.title("列名预览")
+        preview_window.geometry("400x500")
+        
+        columns_listbox = tk.Listbox(preview_window, selectmode=tk.MULTIPLE, 
+                                    height=20, width=50)
+        columns_listbox.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+        
+        for i, col in enumerate(columns, 1):
+            columns_listbox.insert(tk.END, f"{i}. {col}")
+        
+        button_frame = ttk.Frame(preview_window)
+        button_frame.pack(pady=10)
+        
+        def add_selected():
+            selected_indices = columns_listbox.curselection()
+            if not selected_indices:
+                return
+            
+            selected_columns = []
+            for idx in selected_indices:
+                display_text = columns_listbox.get(idx)
+                column_name = re.sub(r'^\d+\.\s*', '', display_text)
+                selected_columns.append(column_name)
+            
+            current_text = target_entry.get().strip()
+            
+            if current_text:
+                existing = [c.strip() for c in current_text.split(',') if c.strip()]
+                for col in selected_columns:
+                    if col not in existing:
+                        existing.append(col)
+                new_text = ', '.join(existing)
+            else:
+                new_text = ', '.join(selected_columns)
+            
+            target_entry.delete(0, tk.END)
+            target_entry.insert(0, new_text)
+            preview_window.destroy()
+        
+        ttk.Button(button_frame, text="添加选中列名", 
+                  command=add_selected).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="关闭", 
+                  command=preview_window.destroy).pack(side=tk.LEFT, padx=5)
+    
     def parse_column_selection(self, columns_str, df_columns):
         """解析列选择字符串"""
         selected_columns = []
@@ -1415,6 +1508,8 @@ A: 处理过程中点击"取消"按钮
         selected_columns = list(dict.fromkeys(selected_columns))
         
         return selected_columns
+    
+    # ==================== 文件选择方法 ====================
     
     def add_files(self):
         if self.is_processing:
@@ -1514,10 +1609,7 @@ A: 处理过程中点击"取消"按钮
             file_path = filedialog.asksaveasfilename(
                 title="保存文件",
                 defaultextension=".xlsx",
-                filetypes=[
-                    ("Excel文件", "*.xlsx"),
-                    ("CSV文件", "*.csv")
-                ]
+                filetypes=[("Excel文件", "*.xlsx"), ("CSV文件", "*.csv")]
             )
         elif convert_type == "excel_to_txt":
             file_path = filedialog.asksaveasfilename(
@@ -1580,7 +1672,8 @@ A: 处理过程中点击"取消"按钮
     def update_file_types(self):
         pass
     
-    # 处理功能方法
+    # ==================== 处理功能方法 ====================
+    
     def start_merge(self):
         if self.is_processing:
             return
@@ -2354,7 +2447,7 @@ A: 处理过程中点击"取消"按钮
                 elif operation == "remove_empty":
                     df = df.dropna()
                 elif operation == "formula_to_value":
-                    # 公式转纯数值：保持列头不变，只转换数值
+                    # 公式转纯数值：保持列头不变
                     for col in df.columns:
                         try:
                             df[col] = pd.to_numeric(df[col], errors='ignore')
