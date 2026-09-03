@@ -64,6 +64,7 @@ class DataProcessingGUI:
         # 初始化处理状态
         self.is_processing = False
         self.last_progress_time = 0
+        self.header_mode = "auto"  # auto: 自动检测, first_file: 以第一个文件为准, no_header: 所有文件都无列名
         
         # 设置窗口最小大小
         self.root.minsize(800, 600)
@@ -149,6 +150,140 @@ class DataProcessingGUI:
             pass
         return widgets
     
+    def detect_header(self, df):
+        """检测DataFrame是否有列名（表头）"""
+        if df.empty:
+            return False
+        
+        first_row = df.iloc[0]
+        column_names = df.columns.tolist()
+        
+        # 检查列名是否像真正的列名
+        # 列名通常包含文字、字母，而数据行通常是具体数值或文本
+        header_score = 0
+        data_score = 0
+        
+        for col in column_names:
+            col_str = str(col)
+            # 列名特征
+            if re.match(r'^[A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff_\s]*$', col_str):
+                header_score += 1
+            # 数据特征
+            if re.match(r'^\d+$', col_str):
+                data_score += 1
+            elif 'Unnamed' in col_str:
+                data_score += 1
+        
+        # 如果列名更像列名，返回True
+        return header_score > data_score
+    
+    def normalize_columns(self, df, reference_columns=None):
+        """统一列名，处理有列名和无列名文件混用的情况"""
+        if reference_columns is None:
+            # 如果没有参考列名，使用第一个文件的列名
+            reference_columns = df.columns.tolist()
+        
+        current_columns = df.columns.tolist()
+        
+        # 如果列数相同，且当前列名与参考列名不同
+        if len(current_columns) == len(reference_columns):
+            # 检查是否需要统一列名
+            if current_columns != reference_columns:
+                self.log(f"统一列名: {current_columns} -> {reference_columns}")
+                df.columns = reference_columns
+        else:
+            # 列数不同，尝试匹配
+            self.log(f"警告: 列数不一致 (当前: {len(current_columns)}, 参考: {len(reference_columns)})")
+            # 使用位置匹配
+            matched_columns = []
+            for i in range(min(len(current_columns), len(reference_columns))):
+                matched_columns.append(reference_columns[i])
+            
+            # 补充缺失的列名
+            while len(matched_columns) < len(current_columns):
+                matched_columns.append(f"列{len(matched_columns)+1}")
+            
+            df.columns = matched_columns
+        
+        return df
+    
+    def read_file_with_header_detection(self, file_path, reference_columns=None):
+        """读取文件并检测列名，支持参考列名统一"""
+        file_extension = os.path.splitext(file_path)[1].lower()
+        
+        if file_extension == '.csv':
+            df = self.read_csv_file_robust(file_path)
+        elif file_extension in ['.xlsx', '.xls']:
+            df = self.read_excel_file(file_path)
+        else:
+            df = self.read_excel_file(file_path)
+        
+        # 检测是否有列名
+        has_header = self.detect_header(df)
+        
+        if not has_header:
+            self.log(f"文件 {os.path.basename(file_path)} 没有列名")
+            # 重新读取，第一行作为数据
+            if file_extension == '.csv':
+                df = self.read_csv_without_header(file_path)
+            else:
+                df = self.read_excel_without_header(file_path)
+        else:
+            self.log(f"文件 {os.path.basename(file_path)} 检测到列名: {df.columns.tolist()}")
+        
+        # 如果有参考列名，统一列名
+        if reference_columns is not None:
+            df = self.normalize_columns(df, reference_columns)
+        
+        return df, has_header
+    
+    def read_csv_without_header(self, file_path):
+        """读取无列名的CSV文件"""
+        encoding = self.detect_file_encoding(file_path)
+        
+        with open(file_path, 'r', encoding=encoding, errors='ignore') as f:
+            sample = f.read(4096)
+            f.seek(0)
+            delimiter = self.detect_delimiter(sample)
+            
+            csv_reader = csv.reader(f, delimiter=delimiter)
+            rows = [row for row in csv_reader if row]
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        max_cols = max(len(row) for row in rows)
+        default_columns = [f"列{i+1}" for i in range(max_cols)]
+        
+        processed_rows = []
+        for row in rows:
+            if len(row) < max_cols:
+                row = row + [''] * (max_cols - len(row))
+            elif len(row) > max_cols:
+                row = row[:max_cols]
+            processed_rows.append(row)
+        
+        df = pd.DataFrame(processed_rows, columns=default_columns, dtype=object)
+        self.log(f"为无列名文件创建默认列名: {default_columns}")
+        return df
+    
+    def read_excel_without_header(self, file_path):
+        """读取无列名的Excel文件"""
+        file_extension = os.path.splitext(file_path)[1].lower()
+        
+        if file_extension == '.xlsx':
+            df = pd.read_excel(file_path, engine='openpyxl', header=None, dtype=object)
+        else:
+            try:
+                df = pd.read_excel(file_path, engine='xlrd', header=None, dtype=object)
+            except:
+                df = pd.read_excel(file_path, engine='openpyxl', header=None, dtype=object)
+        
+        default_columns = [f"列{i+1}" for i in range(len(df.columns))]
+        df.columns = default_columns
+        self.log(f"为无列名文件创建默认列名: {default_columns}")
+        return df
+    
     def remove_blank_data(self, df, remove_blank_rows=True, remove_blank_cols=True, 
                           remove_blank_cells=True):
         """去除空白数据"""
@@ -156,19 +291,19 @@ class DataProcessingGUI:
         
         if remove_blank_rows:
             df = df.dropna(how='all')
-            self.log(f"去除空白行: {original_shape[0] - df.shape[0]}行")
+            if original_shape[0] - df.shape[0] > 0:
+                self.log(f"去除空白行: {original_shape[0] - df.shape[0]}行")
         
         if remove_blank_cols:
             df = df.dropna(axis=1, how='all')
-            self.log(f"去除空白列: {original_shape[1] - df.shape[1]}列")
+            if original_shape[1] - df.shape[1] > 0:
+                self.log(f"去除空白列: {original_shape[1] - df.shape[1]}列")
         
         if remove_blank_cells:
             for col in df.columns:
                 if df[col].dtype == 'object':
                     df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
                     df[col] = df[col].apply(lambda x: np.nan if isinstance(x, str) and x == '' else x)
-            
-            self.log("去除单元格中的空白字符完成")
         
         return df
     
@@ -235,8 +370,6 @@ class DataProcessingGUI:
     
     def read_csv_file_robust(self, file_path):
         """读取CSV文件"""
-        self.log("读取CSV文件...")
-        
         try:
             encoding = self.detect_file_encoding(file_path)
             
@@ -648,7 +781,7 @@ class DataProcessingGUI:
         ttk.Label(self.column_split_frame, text="拆分依据列:").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.split_columns = ttk.Entry(self.column_split_frame, width=50)
         self.split_columns.grid(row=0, column=1, sticky=tk.W, pady=5)
-        ttk.Label(self.column_split_frame, text="(多个列用逗号分隔，如: 部门,地区)").grid(row=0, column=2, sticky=tk.W)
+        ttk.Label(self.column_split_frame, text="(多个列用逗号分隔，如: 部门,地区 或 列1,列2)").grid(row=0, column=2, sticky=tk.W)
         
         self.row_split_frame = ttk.LabelFrame(split_frame, text="按行数拆分设置", padding="10")
         self.row_split_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
@@ -720,7 +853,7 @@ class DataProcessingGUI:
             self.specific_row_frame.grid()
     
     def preview_columns(self):
-        """预览文件列名，支持点击列名添加到选择框"""
+        """预览文件列名"""
         if self.is_processing:
             return
         
@@ -730,113 +863,79 @@ class DataProcessingGUI:
             return
         
         try:
-            df = self.read_excel_file(files[0])
-            columns = df.columns.tolist()
+            # 读取第一个文件获取参考列名
+            first_df = self.read_excel_file(files[0])
+            first_has_header = self.detect_header(first_df)
+            
+            if first_has_header:
+                reference_columns = first_df.columns.tolist()
+            else:
+                # 如果第一个文件没有列名，使用默认列名
+                reference_columns = [f"列{i+1}" for i in range(len(first_df.columns))]
             
             # 创建预览窗口
             preview_window = tk.Toplevel(self.root)
-            preview_window.title("列名预览 - 点击列名添加到选择")
-            preview_window.geometry("500x600")
+            preview_window.title("列名预览")
+            preview_window.geometry("600x700")
             
-            # 提示标签
-            tip_label = ttk.Label(preview_window, 
-                                 text="点击列名可添加到'按列名选择'输入框，支持多选",
-                                 foreground="blue")
-            tip_label.pack(pady=10)
+            # 显示所有文件的列名信息
+            info_frame = ttk.Frame(preview_window)
+            info_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
             
-            # 创建列名列表框架
-            list_frame = ttk.Frame(preview_window)
-            list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+            # 创建文本框显示列名信息
+            info_text = scrolledtext.ScrolledText(info_frame, width=70, height=25)
+            info_text.pack(fill=tk.BOTH, expand=True)
             
-            # 创建Listbox显示列名
-            columns_listbox = tk.Listbox(list_frame, selectmode=tk.MULTIPLE, 
-                                        height=20, width=60)
-            columns_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            info_text.insert(tk.END, "=" * 60 + "\n")
+            info_text.insert(tk.END, "文件列名信息\n")
+            info_text.insert(tk.END, "=" * 60 + "\n\n")
             
-            # 添加滚动条
-            scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=columns_listbox.yview)
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            columns_listbox.configure(yscrollcommand=scrollbar.set)
+            # 显示每个文件的列名
+            for i, file in enumerate(files, 1):
+                df = self.read_excel_file(file)
+                has_header = self.detect_header(df)
+                
+                info_text.insert(tk.END, f"文件 {i}: {os.path.basename(file)}\n")
+                if has_header:
+                    info_text.insert(tk.END, f"  状态: 有列名\n")
+                    info_text.insert(tk.END, f"  列名: {df.columns.tolist()}\n")
+                else:
+                    info_text.insert(tk.END, f"  状态: 无列名（将使用默认列名）\n")
+                    default_cols = [f"列{j+1}" for j in range(len(df.columns))]
+                    info_text.insert(tk.END, f"  默认列名: {default_cols}\n")
+                info_text.insert(tk.END, f"  列数: {len(df.columns)}\n")
+                info_text.insert(tk.END, "-" * 40 + "\n\n")
             
-            # 填充列名
-            for i, col in enumerate(columns, 1):
-                columns_listbox.insert(tk.END, f"{i}. {col}")
+            info_text.insert(tk.END, "=" * 60 + "\n")
+            info_text.insert(tk.END, "统一后的列名（以第一个有列名的文件为准）\n")
+            info_text.insert(tk.END, "=" * 60 + "\n")
+            info_text.insert(tk.END, f"{reference_columns}\n\n")
+            info_text.insert(tk.END, "提示：无列名文件将按照列位置匹配到统一列名\n")
+            
+            info_text.config(state='disabled')
             
             # 按钮框架
             button_frame = ttk.Frame(preview_window)
             button_frame.pack(pady=10)
             
-            def add_selected_columns():
-                """添加选中的列名到输入框"""
-                selected_indices = columns_listbox.curselection()
-                if not selected_indices:
-                    messagebox.showwarning("警告", "请先选择列名")
-                    return
-                
-                # 获取选中的列名
-                selected_columns = []
-                for idx in selected_indices:
-                    # 从显示文本中提取列名（去掉序号）
-                    display_text = columns_listbox.get(idx)
-                    # 提取列名（去掉"数字. "前缀）
-                    column_name = re.sub(r'^\d+\.\s*', '', display_text)
-                    selected_columns.append(column_name)
-                
-                # 获取当前输入框内容
-                current_text = self.columns_by_name.get().strip()
-                
-                # 合并列名
-                if current_text:
-                    existing_columns = [c.strip() for c in current_text.split(',') if c.strip()]
-                    # 去重并保持顺序
-                    for col in selected_columns:
-                        if col not in existing_columns:
-                            existing_columns.append(col)
-                    new_text = ', '.join(existing_columns)
-                else:
-                    new_text = ', '.join(selected_columns)
-                
-                # 更新输入框
+            def add_reference_columns():
+                """添加参考列名到选择框"""
+                new_text = ', '.join(reference_columns)
                 self.columns_by_name.delete(0, tk.END)
                 self.columns_by_name.insert(0, new_text)
-                
-                self.log(f"已添加列名: {', '.join(selected_columns)}")
-                messagebox.showinfo("成功", f"已添加 {len(selected_columns)} 个列名到选择框")
+                self.log(f"已添加参考列名: {len(reference_columns)}个")
+                messagebox.showinfo("成功", f"已添加所有参考列名")
             
-            def add_all_columns():
-                """添加所有列名到输入框"""
-                all_columns = [re.sub(r'^\d+\.\s*', '', columns_listbox.get(idx)) 
-                              for idx in range(columns_listbox.size())]
-                
-                if all_columns:
-                    new_text = ', '.join(all_columns)
-                    self.columns_by_name.delete(0, tk.END)
-                    self.columns_by_name.insert(0, new_text)
-                    
-                    self.log(f"已添加所有列名: {len(all_columns)}个")
-                    messagebox.showinfo("成功", f"已添加所有 {len(all_columns)} 个列名")
-            
-            # 按钮
-            ttk.Button(button_frame, text="添加选中列名", 
-                      command=add_selected_columns).pack(side=tk.LEFT, padx=5)
-            ttk.Button(button_frame, text="添加所有列名", 
-                      command=add_all_columns).pack(side=tk.LEFT, padx=5)
+            ttk.Button(button_frame, text="添加所有统一列名", 
+                      command=add_reference_columns).pack(side=tk.LEFT, padx=5)
             ttk.Button(button_frame, text="关闭", 
                       command=preview_window.destroy).pack(side=tk.LEFT, padx=5)
-            
-            # 双击列名也可添加
-            def on_double_click(event):
-                selection = columns_listbox.curselection()
-                if selection:
-                    add_selected_columns()
-            
-            columns_listbox.bind('<Double-Button-1>', on_double_click)
             
         except Exception as e:
             messagebox.showerror("错误", f"读取文件失败: {str(e)}")
     
     def preview_split_columns(self):
-        """预览拆分文件的列名，支持点击列名添加到拆分依据列"""
+        """预览拆分文件的列名"""
         if self.is_processing:
             return
         
@@ -847,59 +946,55 @@ class DataProcessingGUI:
         
         try:
             df = self.read_excel_file(file_path)
+            has_header = self.detect_header(df)
+            
+            if not has_header:
+                # 无列名，使用默认列名
+                default_cols = [f"列{i+1}" for i in range(len(df.columns))]
+                df.columns = default_cols
+            
             columns = df.columns.tolist()
             
-            # 创建预览窗口
             preview_window = tk.Toplevel(self.root)
-            preview_window.title("列名预览 - 点击列名添加到拆分依据")
+            preview_window.title("列名预览")
             preview_window.geometry("500x600")
             
-            # 提示标签
             tip_label = ttk.Label(preview_window, 
-                                 text="点击列名可添加到'拆分依据列'输入框，支持多选",
-                                 foreground="blue")
+                                 text="点击列名可添加到'拆分依据列'输入框，支持多选" if has_header else "该文件没有列名，已使用默认列名",
+                                 foreground="blue" if has_header else "orange")
             tip_label.pack(pady=10)
             
-            # 创建列名列表框架
             list_frame = ttk.Frame(preview_window)
             list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
             
-            # 创建Listbox显示列名
             columns_listbox = tk.Listbox(list_frame, selectmode=tk.MULTIPLE, 
                                         height=20, width=60)
             columns_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
             
-            # 添加滚动条
             scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=columns_listbox.yview)
             scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
             columns_listbox.configure(yscrollcommand=scrollbar.set)
             
-            # 填充列名
             for i, col in enumerate(columns, 1):
                 columns_listbox.insert(tk.END, f"{i}. {col}")
             
-            # 按钮框架
             button_frame = ttk.Frame(preview_window)
             button_frame.pack(pady=10)
             
             def add_selected_columns():
-                """添加选中的列名到拆分依据列输入框"""
                 selected_indices = columns_listbox.curselection()
                 if not selected_indices:
                     messagebox.showwarning("警告", "请先选择列名")
                     return
                 
-                # 获取选中的列名
                 selected_columns = []
                 for idx in selected_indices:
                     display_text = columns_listbox.get(idx)
                     column_name = re.sub(r'^\d+\.\s*', '', display_text)
                     selected_columns.append(column_name)
                 
-                # 获取当前输入框内容
                 current_text = self.split_columns.get().strip()
                 
-                # 合并列名
                 if current_text:
                     existing_columns = [c.strip() for c in current_text.split(',') if c.strip()]
                     for col in selected_columns:
@@ -909,41 +1004,16 @@ class DataProcessingGUI:
                 else:
                     new_text = ', '.join(selected_columns)
                 
-                # 更新输入框
                 self.split_columns.delete(0, tk.END)
                 self.split_columns.insert(0, new_text)
                 
                 self.log(f"已添加拆分列: {', '.join(selected_columns)}")
                 messagebox.showinfo("成功", f"已添加 {len(selected_columns)} 个列名到拆分依据列")
             
-            def add_all_columns():
-                """添加所有列名到拆分依据列输入框"""
-                all_columns = [re.sub(r'^\d+\.\s*', '', columns_listbox.get(idx)) 
-                              for idx in range(columns_listbox.size())]
-                
-                if all_columns:
-                    new_text = ', '.join(all_columns)
-                    self.split_columns.delete(0, tk.END)
-                    self.split_columns.insert(0, new_text)
-                    
-                    self.log(f"已添加所有列名: {len(all_columns)}个")
-                    messagebox.showinfo("成功", f"已添加所有 {len(all_columns)} 个列名")
-            
-            # 按钮
             ttk.Button(button_frame, text="添加选中列名", 
                       command=add_selected_columns).pack(side=tk.LEFT, padx=5)
-            ttk.Button(button_frame, text="添加所有列名", 
-                      command=add_all_columns).pack(side=tk.LEFT, padx=5)
             ttk.Button(button_frame, text="关闭", 
                       command=preview_window.destroy).pack(side=tk.LEFT, padx=5)
-            
-            # 双击列名也可添加
-            def on_double_click(event):
-                selection = columns_listbox.curselection()
-                if selection:
-                    add_selected_columns()
-            
-            columns_listbox.bind('<Double-Button-1>', on_double_click)
             
         except Exception as e:
             messagebox.showerror("错误", f"读取文件失败: {str(e)}")
@@ -1165,20 +1235,38 @@ class DataProcessingGUI:
             self.start_indeterminate("正在合并文件...")
             self.log("开始合并文件...")
             
-            dfs = []
-            total_files = len(files)
+            # 获取参考列名（从第一个有列名的文件）
+            reference_columns = None
+            reference_file = None
             
-            first_df = self.read_excel_file(files[0])
-            all_columns = first_df.columns.tolist()
+            for file in files:
+                df = self.read_excel_file(file)
+                if self.detect_header(df):
+                    reference_columns = df.columns.tolist()
+                    reference_file = file
+                    self.log(f"使用文件 {os.path.basename(file)} 的列名作为参考")
+                    break
             
+            if reference_columns is None:
+                # 所有文件都没有列名，使用默认列名
+                first_df = self.read_excel_file(files[0])
+                reference_columns = [f"列{i+1}" for i in range(len(first_df.columns))]
+                self.log("所有文件都没有列名，使用默认列名")
+            
+            self.log(f"参考列名: {reference_columns}")
+            
+            # 解析列选择
             selected_columns = self.parse_column_selection(
-                self.columns_by_name.get(), all_columns
+                self.columns_by_name.get(), reference_columns
             )
             
             if selected_columns:
                 self.log(f"选择的列: {selected_columns}")
             else:
                 self.log("选择所有列")
+            
+            dfs = []
+            total_files = len(files)
             
             for i, file in enumerate(files):
                 self.check_cancel()
@@ -1188,17 +1276,29 @@ class DataProcessingGUI:
                 
                 self.update_progress((i / total_files) * 40, f"读取文件 {i+1}/{total_files}")
                 
+                # 读取文件
                 df = self.read_excel_file(file)
+                has_header = self.detect_header(df)
                 
+                if not has_header:
+                    self.log(f"文件 {os.path.basename(file)} 没有列名，使用默认列名并按位置匹配")
+                    # 无列名文件，重新读取并设置默认列名
+                    file_extension = os.path.splitext(file)[1].lower()
+                    if file_extension == '.csv':
+                        df = self.read_csv_without_header(file)
+                    else:
+                        df = self.read_excel_without_header(file)
+                
+                # 统一列名
+                df = self.normalize_columns(df, reference_columns)
+                
+                # 选择特定列
                 if selected_columns:
                     available_columns = [col for col in selected_columns if col in df.columns]
-                    if len(available_columns) != len(selected_columns):
-                        missing = [col for col in selected_columns if col not in df.columns]
-                        self.log(f"警告: 文件 {os.path.basename(file)} 缺少列: {missing}")
                     df = df[available_columns]
                 
+                # 去除空白数据
                 if self.remove_blank_rows_var.get() or self.remove_blank_cols_var.get() or self.remove_blank_cells_var.get():
-                    self.log(f"正在去除文件 {os.path.basename(file)} 的空白数据...")
                     df = self.remove_blank_data(
                         df,
                         remove_blank_rows=self.remove_blank_rows_var.get(),
@@ -1206,6 +1306,7 @@ class DataProcessingGUI:
                         remove_blank_cells=self.remove_blank_cells_var.get()
                     )
                 
+                # 添加数据来源列
                 if self.add_source_var.get():
                     df['数据来源'] = os.path.basename(file)
                 
@@ -1225,7 +1326,6 @@ class DataProcessingGUI:
             self.update_progress(75, "正在处理数据...", force_update=True)
             
             if self.remove_blank_rows_var.get() or self.remove_blank_cols_var.get():
-                self.log("正在去除合并后的空白数据...")
                 merged_df = self.remove_blank_data(
                     merged_df,
                     remove_blank_rows=self.remove_blank_rows_var.get(),
@@ -1319,6 +1419,14 @@ class DataProcessingGUI:
         self.update_progress(20, "正在读取文件...", force_update=True)
         df = self.read_excel_file(input_path)
         
+        if not self.detect_header(df):
+            self.log("文件没有列名，使用默认列名")
+            file_extension = os.path.splitext(input_path)[1].lower()
+            if file_extension == '.csv':
+                df = self.read_csv_without_header(input_path)
+            else:
+                df = self.read_excel_without_header(input_path)
+        
         df = self.remove_blank_data(df)
         df = self.convert_dtypes_after_processing(df)
         
@@ -1398,6 +1506,14 @@ class DataProcessingGUI:
             self.update_progress(20, "正在读取Excel文件...", force_update=True)
             df = self.read_excel_file(input_path)
             
+            if not self.detect_header(df):
+                self.log("文件没有列名，使用默认列名")
+                file_extension = os.path.splitext(input_path)[1].lower()
+                if file_extension == '.csv':
+                    df = self.read_csv_without_header(input_path)
+                else:
+                    df = self.read_excel_without_header(input_path)
+            
             df = self.remove_blank_data(df)
             df = self.convert_dtypes_after_processing(df)
             
@@ -1443,6 +1559,14 @@ class DataProcessingGUI:
             
             self.update_progress(20, "正在读取Excel文件...", force_update=True)
             df = self.read_excel_file(input_path)
+            
+            if not self.detect_header(df):
+                self.log("文件没有列名，使用默认列名")
+                file_extension = os.path.splitext(input_path)[1].lower()
+                if file_extension == '.csv':
+                    df = self.read_csv_without_header(input_path)
+                else:
+                    df = self.read_excel_without_header(input_path)
             
             df = self.remove_blank_data(df)
             df = self.convert_dtypes_after_processing(df)
@@ -1608,6 +1732,14 @@ class DataProcessingGUI:
             
             self.update_progress(10, "正在读取文件...", force_update=True)
             df = self.read_excel_file(file_path)
+            
+            if not self.detect_header(df):
+                self.log("文件没有列名，使用默认列名")
+                file_extension = os.path.splitext(file_path)[1].lower()
+                if file_extension == '.csv':
+                    df = self.read_csv_without_header(file_path)
+                else:
+                    df = self.read_excel_without_header(file_path)
             
             self.log("正在去除空白数据...")
             df = self.remove_blank_data(df)
@@ -1787,6 +1919,14 @@ class DataProcessingGUI:
                 self.update_progress(progress, f"正在处理 {i+1}/{total_files}")
                 
                 df = self.read_excel_file(file_path)
+                
+                if not self.detect_header(df):
+                    self.log(f"文件 {file_name} 没有列名，使用默认列名")
+                    file_extension = os.path.splitext(file_path)[1].lower()
+                    if file_extension == '.csv':
+                        df = self.read_csv_without_header(file_path)
+                    else:
+                        df = self.read_excel_without_header(file_path)
                 
                 if operation == "clean":
                     df = self.remove_blank_data(df)
