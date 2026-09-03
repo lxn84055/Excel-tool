@@ -13,7 +13,7 @@ class DataProcessingGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Excel/Word 数据处理工具")
-        self.root.geometry("1200x800")
+        self.root.geometry("960x540")
         
         # 设置样式
         style = ttk.Style()
@@ -41,7 +41,6 @@ class DataProcessingGUI:
         
         # 创建标签页
         self.notebook = ttk.Notebook(self.main_frame)
-        self.notebook.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         # 创建各个功能标签页
         self.create_merge_tab()
@@ -55,6 +54,11 @@ class DataProcessingGUI:
         # 日志区域
         self.create_log_area()
         
+        # 初始布局：标签页在上，进度和日志在下
+        self.notebook.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.progress_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
+        self.log_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=10)
+        
         # 配置网格权重
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
@@ -66,7 +70,7 @@ class DataProcessingGUI:
         self.last_progress_time = 0
         
         # 设置窗口最小大小
-        self.root.minsize(800, 600)
+        self.root.minsize(800, 500)
         
         # 设置窗口居中
         self.center_window()
@@ -104,6 +108,17 @@ class DataProcessingGUI:
         
         self.unbind_mousewheel_recursive(self.root)
         self.cancel_button.config(state='normal')
+        
+        # 处理中布局：进度和日志置顶
+        self.notebook.grid_remove()
+        self.progress_frame.grid_remove()
+        self.log_frame.grid_remove()
+        
+        self.progress_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=5)
+        self.log_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
+        self.notebook.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        self.root.update_idletasks()
     
     def unlock_interface(self):
         """解锁界面"""
@@ -125,6 +140,17 @@ class DataProcessingGUI:
         
         self.bind_mousewheel_recursive(self.root)
         self.cancel_button.config(state='disabled')
+        
+        # 恢复正常布局：标签页在上，进度和日志在下
+        self.notebook.grid_remove()
+        self.progress_frame.grid_remove()
+        self.log_frame.grid_remove()
+        
+        self.notebook.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.progress_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
+        self.log_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=10)
+        
+        self.root.update_idletasks()
     
     def unbind_mousewheel_recursive(self, widget):
         """递归解绑鼠标滚轮事件"""
@@ -630,33 +656,32 @@ class DataProcessingGUI:
     
     def center_window(self):
         self.root.update_idletasks()
-        width = 1200
-        height = 800
+        width = 960
+        height = 540
         x = (self.root.winfo_screenwidth() // 2) - (width // 2)
         y = (self.root.winfo_screenheight() // 2) - (height // 2)
         self.root.geometry(f'{width}x{height}+{x}+{y}')
     
     def create_progress_area(self):
-        progress_frame = ttk.LabelFrame(self.main_frame, text="处理进度", padding="5")
-        progress_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
+        self.progress_frame = ttk.LabelFrame(self.main_frame, text="处理进度", padding="5")
         
         self.progress_var = tk.DoubleVar()
-        self.progress_bar = ttk.Progressbar(progress_frame, variable=self.progress_var, 
-                                           maximum=100, length=1000, mode='determinate')
+        self.progress_bar = ttk.Progressbar(self.progress_frame, variable=self.progress_var, 
+                                           maximum=100, length=900, mode='determinate')
         self.progress_bar.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         
-        self.progress_label = ttk.Label(progress_frame, text="0%")
+        self.progress_label = ttk.Label(self.progress_frame, text="0%")
         self.progress_label.grid(row=0, column=2, padx=10)
         
-        self.status_label = ttk.Label(progress_frame, text="就绪", foreground="green")
+        self.status_label = ttk.Label(self.progress_frame, text="就绪", foreground="green")
         self.status_label.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=5)
         
-        self.indeterminate_progress = ttk.Progressbar(progress_frame, mode='indeterminate',
-                                                      length=1000)
+        self.indeterminate_progress = ttk.Progressbar(self.progress_frame, mode='indeterminate',
+                                                      length=900)
         self.indeterminate_progress.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         self.indeterminate_progress.grid_remove()
         
-        self.cancel_button = ttk.Button(progress_frame, text="取消", command=self.cancel_operation,
+        self.cancel_button = ttk.Button(self.progress_frame, text="取消", command=self.cancel_operation,
                                        state='disabled')
         self.cancel_button.grid(row=2, column=2, padx=10)
         
@@ -664,14 +689,13 @@ class DataProcessingGUI:
         self.last_progress_time = 0
     
     def create_log_area(self):
-        log_frame = ttk.LabelFrame(self.main_frame, text="操作日志", padding="5")
-        log_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=10)
+        self.log_frame = ttk.LabelFrame(self.main_frame, text="操作日志", padding="5")
         
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=5, width=100)
+        self.log_text = scrolledtext.ScrolledText(self.log_frame, height=4, width=100)
         self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E))
         
-        clear_btn = ttk.Button(log_frame, text="清除日志", command=self.clear_log)
-        clear_btn.grid(row=1, column=0, pady=5)
+        clear_btn = ttk.Button(self.log_frame, text="清除日志", command=self.clear_log)
+        clear_btn.grid(row=1, column=0, pady=2)
     
     def clear_log(self):
         if self.is_processing:
@@ -736,14 +760,13 @@ class DataProcessingGUI:
         merge_frame = ttk.Frame(self.notebook, padding="10")
         self.notebook.add(merge_frame, text="数据合并")
         
-        # 文件选择区域
         file_frame = ttk.LabelFrame(merge_frame, text="选择要合并的文件（支持Excel和CSV）", padding="10")
         file_frame.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
         file_list_frame = ttk.Frame(file_frame)
         file_list_frame.grid(row=0, column=0, columnspan=3, pady=5, sticky=(tk.W, tk.E))
         
-        self.file_listbox = tk.Listbox(file_list_frame, height=4, width=80, selectmode=tk.MULTIPLE)
+        self.file_listbox = tk.Listbox(file_list_frame, height=3, width=70, selectmode=tk.MULTIPLE)
         self.file_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         file_scrollbar = ttk.Scrollbar(file_list_frame, orient="vertical", command=self.file_listbox.yview)
@@ -758,64 +781,59 @@ class DataProcessingGUI:
         ttk.Button(button_frame, text="清空列表", command=self.clear_file_list).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="预览列名", command=self.preview_columns).pack(side=tk.LEFT, padx=5)
         
-        # 列选择区域
         column_frame = ttk.LabelFrame(merge_frame, text="列选择（留空表示选择所有列）", padding="10")
         column_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
-        ttk.Label(column_frame, text="按列名选择:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.columns_by_name = ttk.Entry(column_frame, width=60)
-        self.columns_by_name.grid(row=0, column=1, columnspan=2, sticky=tk.W, pady=5)
-        ttk.Label(column_frame, text="(用逗号分隔列名，如: 姓名,年龄,工资)").grid(row=0, column=3, sticky=tk.W)
+        ttk.Label(column_frame, text="按列名选择:").grid(row=0, column=0, sticky=tk.W, pady=3)
+        self.columns_by_name = ttk.Entry(column_frame, width=50)
+        self.columns_by_name.grid(row=0, column=1, columnspan=2, sticky=tk.W, pady=3)
+        ttk.Label(column_frame, text="(用逗号分隔列名)").grid(row=0, column=3, sticky=tk.W)
         
-        ttk.Label(column_frame, text="按列坐标选择:").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.columns_by_index = ttk.Entry(column_frame, width=60)
-        self.columns_by_index.grid(row=1, column=1, columnspan=2, sticky=tk.W, pady=5)
-        ttk.Label(column_frame, text="(用逗号分隔列号，从1开始，如: 1,3,5 或 1-5)").grid(row=1, column=3, sticky=tk.W)
+        ttk.Label(column_frame, text="按列坐标选择:").grid(row=1, column=0, sticky=tk.W, pady=3)
+        self.columns_by_index = ttk.Entry(column_frame, width=50)
+        self.columns_by_index.grid(row=1, column=1, columnspan=2, sticky=tk.W, pady=3)
+        ttk.Label(column_frame, text="(如: 1,3,5 或 1-5)").grid(row=1, column=3, sticky=tk.W)
         
-        # 合并选项
         option_frame = ttk.LabelFrame(merge_frame, text="合并选项", padding="10")
         option_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
-        ttk.Label(option_frame, text="合并方式:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Label(option_frame, text="合并方式:").grid(row=0, column=0, sticky=tk.W, pady=3)
         self.merge_type = tk.StringVar(value="vertical")
-        ttk.Radiobutton(option_frame, text="垂直合并（按行追加）", variable=self.merge_type, 
-                       value="vertical").grid(row=0, column=1, sticky=tk.W, padx=10)
-        ttk.Radiobutton(option_frame, text="水平合并（按列拼接）", variable=self.merge_type, 
-                       value="horizontal").grid(row=0, column=2, sticky=tk.W, padx=10)
-        
-        ttk.Label(option_frame, text="去除空白:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Radiobutton(option_frame, text="垂直合并", variable=self.merge_type, 
+                       value="vertical").grid(row=0, column=1, sticky=tk.W, padx=5)
+        ttk.Radiobutton(option_frame, text="水平合并", variable=self.merge_type, 
+                       value="horizontal").grid(row=0, column=2, sticky=tk.W, padx=5)
         
         self.remove_blank_rows_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(option_frame, text="去除空白行", 
-                       variable=self.remove_blank_rows_var).grid(row=1, column=1, sticky=tk.W, padx=5)
+        ttk.Checkbutton(option_frame, text="去空白行", 
+                       variable=self.remove_blank_rows_var).grid(row=1, column=0, sticky=tk.W, pady=3)
         
         self.remove_blank_cols_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(option_frame, text="去除空白列", 
-                       variable=self.remove_blank_cols_var).grid(row=1, column=2, sticky=tk.W, padx=5)
+        ttk.Checkbutton(option_frame, text="去空白列", 
+                       variable=self.remove_blank_cols_var).grid(row=1, column=1, sticky=tk.W, pady=3)
         
         self.remove_blank_cells_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(option_frame, text="去除单元格空白字符", 
-                       variable=self.remove_blank_cells_var).grid(row=2, column=1, sticky=tk.W, padx=5)
+        ttk.Checkbutton(option_frame, text="去单元格空白", 
+                       variable=self.remove_blank_cells_var).grid(row=1, column=2, sticky=tk.W, pady=3)
         
         self.add_source_var = tk.BooleanVar()
-        ttk.Checkbutton(option_frame, text="添加数据来源标识", 
-                       variable=self.add_source_var).grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=5)
+        ttk.Checkbutton(option_frame, text="添加来源标识", 
+                       variable=self.add_source_var).grid(row=2, column=0, sticky=tk.W, pady=3)
         
         self.remove_dup_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(option_frame, text="去除重复行", 
-                       variable=self.remove_dup_var).grid(row=3, column=2, columnspan=2, sticky=tk.W, pady=5)
+                       variable=self.remove_dup_var).grid(row=2, column=1, sticky=tk.W, pady=3)
         
-        # 输出设置
         output_frame = ttk.LabelFrame(merge_frame, text="输出设置", padding="10")
         output_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
-        ttk.Label(output_frame, text="输出文件:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Label(output_frame, text="输出文件:").grid(row=0, column=0, sticky=tk.W, pady=3)
         self.output_path = tk.StringVar()
         ttk.Entry(output_frame, textvariable=self.output_path, width=50).grid(row=0, column=1, padx=5)
         ttk.Button(output_frame, text="浏览", command=self.select_output_file).grid(row=0, column=2)
         
-        self.merge_button = ttk.Button(merge_frame, text="开始合并", command=self.start_merge, width=20)
-        self.merge_button.grid(row=4, column=0, columnspan=3, pady=10)
+        self.merge_button = ttk.Button(merge_frame, text="开始合并", command=self.start_merge, width=15)
+        self.merge_button.grid(row=4, column=0, columnspan=3, pady=5)
     
     def create_convert_tab(self):
         """创建格式转换标签页"""
@@ -827,19 +845,18 @@ class DataProcessingGUI:
         
         self.convert_type = tk.StringVar(value="excel_to_word")
         
-        ttk.Radiobutton(type_frame, text="Excel/CSV转Word", variable=self.convert_type, 
-                       value="excel_to_word", command=self.update_file_types).grid(row=0, column=0, padx=10, pady=5)
-        ttk.Radiobutton(type_frame, text="Word转Excel", variable=self.convert_type, 
-                       value="word_to_excel", command=self.update_file_types).grid(row=0, column=1, padx=10, pady=5)
-        ttk.Radiobutton(type_frame, text="Excel/CSV转PDF", variable=self.convert_type, 
-                       value="excel_to_pdf", command=self.update_file_types).grid(row=0, column=2, padx=10, pady=5)
-        
-        ttk.Radiobutton(type_frame, text="Excel/CSV转PPT", variable=self.convert_type, 
-                       value="excel_to_ppt", command=self.update_file_types).grid(row=1, column=0, padx=10, pady=5)
-        ttk.Radiobutton(type_frame, text="Word转PDF", variable=self.convert_type, 
-                       value="word_to_pdf", command=self.update_file_types).grid(row=1, column=1, padx=10, pady=5)
-        ttk.Radiobutton(type_frame, text="PPT转PDF", variable=self.convert_type, 
-                       value="ppt_to_pdf", command=self.update_file_types).grid(row=1, column=2, padx=10, pady=5)
+        ttk.Radiobutton(type_frame, text="Excel→Word", variable=self.convert_type, 
+                       value="excel_to_word").grid(row=0, column=0, padx=5, pady=3)
+        ttk.Radiobutton(type_frame, text="Word→Excel", variable=self.convert_type, 
+                       value="word_to_excel").grid(row=0, column=1, padx=5, pady=3)
+        ttk.Radiobutton(type_frame, text="Excel→PDF", variable=self.convert_type, 
+                       value="excel_to_pdf").grid(row=0, column=2, padx=5, pady=3)
+        ttk.Radiobutton(type_frame, text="Excel→PPT", variable=self.convert_type, 
+                       value="excel_to_ppt").grid(row=1, column=0, padx=5, pady=3)
+        ttk.Radiobutton(type_frame, text="Word→PDF", variable=self.convert_type, 
+                       value="word_to_pdf").grid(row=1, column=1, padx=5, pady=3)
+        ttk.Radiobutton(type_frame, text="PPT→PDF", variable=self.convert_type, 
+                       value="ppt_to_pdf").grid(row=1, column=2, padx=5, pady=3)
         
         input_frame = ttk.LabelFrame(convert_frame, text="输入文件", padding="10")
         input_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
@@ -855,8 +872,8 @@ class DataProcessingGUI:
         ttk.Entry(output_frame, textvariable=self.convert_output, width=60).grid(row=0, column=0, padx=5)
         ttk.Button(output_frame, text="浏览", command=self.select_convert_output).grid(row=0, column=1)
         
-        self.convert_button = ttk.Button(convert_frame, text="开始转换", command=self.start_convert, width=20)
-        self.convert_button.grid(row=3, column=0, columnspan=3, pady=10)
+        self.convert_button = ttk.Button(convert_frame, text="开始转换", command=self.start_convert, width=15)
+        self.convert_button.grid(row=3, column=0, columnspan=3, pady=5)
     
     def create_split_tab(self):
         """创建数据拆分标签页"""
@@ -871,89 +888,77 @@ class DataProcessingGUI:
         ttk.Button(file_frame, text="浏览", command=self.select_split_file).grid(row=0, column=1)
         ttk.Button(file_frame, text="预览列名", command=self.preview_split_columns).grid(row=0, column=2, padx=5)
         
-        # 拆分方式选择
         method_frame = ttk.LabelFrame(split_frame, text="拆分方式", padding="10")
         method_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
         self.split_method = tk.StringVar(value="by_columns")
-        ttk.Radiobutton(method_frame, text="按列值拆分", variable=self.split_method, 
-                       value="by_columns", command=self.toggle_split_method).grid(row=0, column=0, padx=10)
-        ttk.Radiobutton(method_frame, text="按列位置拆分", variable=self.split_method, 
-                       value="by_column_position", command=self.toggle_split_method).grid(row=0, column=1, padx=10)
-        ttk.Radiobutton(method_frame, text="按行数拆分", variable=self.split_method, 
-                       value="by_rows", command=self.toggle_split_method).grid(row=0, column=2, padx=10)
-        ttk.Radiobutton(method_frame, text="按特定行拆分", variable=self.split_method, 
-                       value="by_specific_rows", command=self.toggle_split_method).grid(row=1, column=0, padx=10)
+        ttk.Radiobutton(method_frame, text="按列值", variable=self.split_method, 
+                       value="by_columns", command=self.toggle_split_method).grid(row=0, column=0, padx=5)
+        ttk.Radiobutton(method_frame, text="按列位置", variable=self.split_method, 
+                       value="by_column_position", command=self.toggle_split_method).grid(row=0, column=1, padx=5)
+        ttk.Radiobutton(method_frame, text="按行数", variable=self.split_method, 
+                       value="by_rows", command=self.toggle_split_method).grid(row=0, column=2, padx=5)
+        ttk.Radiobutton(method_frame, text="按特定行", variable=self.split_method, 
+                       value="by_specific_rows", command=self.toggle_split_method).grid(row=0, column=3, padx=5)
         
-        # 按列值拆分设置
         self.column_split_frame = ttk.LabelFrame(split_frame, text="按列值拆分设置", padding="10")
         self.column_split_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
-        ttk.Label(self.column_split_frame, text="拆分依据列:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.split_columns = ttk.Entry(self.column_split_frame, width=50)
-        self.split_columns.grid(row=0, column=1, sticky=tk.W, pady=5)
-        ttk.Label(self.column_split_frame, text="(多个列用逗号分隔，如: 部门,地区)").grid(row=0, column=2, sticky=tk.W)
+        ttk.Label(self.column_split_frame, text="拆分依据列:").grid(row=0, column=0, sticky=tk.W, pady=3)
+        self.split_columns = ttk.Entry(self.column_split_frame, width=40)
+        self.split_columns.grid(row=0, column=1, sticky=tk.W, pady=3)
         
-        # 按列位置拆分设置
         self.column_position_frame = ttk.LabelFrame(split_frame, text="按列位置拆分设置", padding="10")
         self.column_position_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
-        ttk.Label(self.column_position_frame, text="拆分方式:").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.column_position_type = tk.StringVar(value="before_after")
         ttk.Radiobutton(self.column_position_frame, text="前后拆分", variable=self.column_position_type, 
-                       value="before_after", command=self.toggle_column_position_type).grid(row=0, column=1, sticky=tk.W, padx=5)
+                       value="before_after", command=self.toggle_column_position_type).grid(row=0, column=0, padx=5)
         ttk.Radiobutton(self.column_position_frame, text="指定列提取", variable=self.column_position_type, 
-                       value="specific_columns", command=self.toggle_column_position_type).grid(row=0, column=2, sticky=tk.W, padx=5)
+                       value="specific_columns", command=self.toggle_column_position_type).grid(row=0, column=1, padx=5)
         
-        # 前后拆分设置
         self.before_after_frame = ttk.Frame(self.column_position_frame)
-        self.before_after_frame.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=5)
+        self.before_after_frame.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=3)
         
-        ttk.Label(self.before_after_frame, text="拆分位置列号:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.split_position = ttk.Entry(self.before_after_frame, width=20)
-        self.split_position.grid(row=0, column=1, sticky=tk.W, pady=5)
-        ttk.Label(self.before_after_frame, text="(例如: 3 表示列1-3拆分为一个文件，列4及以后拆分为另一个文件)").grid(row=0, column=2, sticky=tk.W)
+        ttk.Label(self.before_after_frame, text="拆分位置列号:").grid(row=0, column=0, sticky=tk.W, pady=3)
+        self.split_position = ttk.Entry(self.before_after_frame, width=15)
+        self.split_position.grid(row=0, column=1, sticky=tk.W, pady=3)
+        ttk.Button(self.before_after_frame, text="从预览选择", command=self.preview_position_columns).grid(row=0, column=2, padx=5)
         
-        # 指定列提取设置
         self.specific_columns_frame = ttk.Frame(self.column_position_frame)
-        self.specific_columns_frame.grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=5)
+        self.specific_columns_frame.grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=3)
         
-        ttk.Label(self.specific_columns_frame, text="指定列号:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.specific_column_numbers = ttk.Entry(self.specific_columns_frame, width=50)
-        self.specific_column_numbers.grid(row=0, column=1, sticky=tk.W, pady=5)
-        ttk.Label(self.specific_columns_frame, text="(例如: 3,5,10 表示提取第3、5、10列)").grid(row=0, column=2, sticky=tk.W)
+        ttk.Label(self.specific_columns_frame, text="指定列号:").grid(row=0, column=0, sticky=tk.W, pady=3)
+        self.specific_column_numbers = ttk.Entry(self.specific_columns_frame, width=40)
+        self.specific_column_numbers.grid(row=0, column=1, sticky=tk.W, pady=3)
+        ttk.Button(self.specific_columns_frame, text="从预览选择", command=self.preview_specific_columns).grid(row=0, column=2, padx=5)
         
-        # 按行数拆分设置
         self.row_split_frame = ttk.LabelFrame(split_frame, text="按行数拆分设置", padding="10")
         self.row_split_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
-        ttk.Label(self.row_split_frame, text="每个文件行数:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.rows_per_file = ttk.Entry(self.row_split_frame, width=20)
-        self.rows_per_file.grid(row=0, column=1, sticky=tk.W, pady=5)
+        ttk.Label(self.row_split_frame, text="每个文件行数:").grid(row=0, column=0, sticky=tk.W, pady=3)
+        self.rows_per_file = ttk.Entry(self.row_split_frame, width=15)
+        self.rows_per_file.grid(row=0, column=1, sticky=tk.W, pady=3)
         self.rows_per_file.insert(0, "1000")
         
-        # 按特定行拆分设置
         self.specific_row_frame = ttk.LabelFrame(split_frame, text="按特定行拆分设置", padding="10")
         self.specific_row_frame.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
-        ttk.Label(self.specific_row_frame, text="拆分行号:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.specific_rows = ttk.Entry(self.specific_row_frame, width=50)
-        self.specific_rows.grid(row=0, column=1, sticky=tk.W, pady=5)
-        ttk.Label(self.specific_row_frame, text="(用逗号分隔行号，如: 100,200,300)").grid(row=0, column=2, sticky=tk.W)
+        ttk.Label(self.specific_row_frame, text="拆分行号:").grid(row=0, column=0, sticky=tk.W, pady=3)
+        self.specific_rows = ttk.Entry(self.specific_row_frame, width=40)
+        self.specific_rows.grid(row=0, column=1, sticky=tk.W, pady=3)
         
-        # 输出设置
         output_frame = ttk.LabelFrame(split_frame, text="输出设置", padding="10")
         output_frame.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         
-        ttk.Label(output_frame, text="输出目录:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Label(output_frame, text="输出目录:").grid(row=0, column=0, sticky=tk.W, pady=3)
         self.split_output_dir = tk.StringVar(value="./split_output")
-        ttk.Entry(output_frame, textvariable=self.split_output_dir, width=40).grid(row=0, column=1, pady=5)
+        ttk.Entry(output_frame, textvariable=self.split_output_dir, width=40).grid(row=0, column=1, pady=3)
         ttk.Button(output_frame, text="浏览", command=self.select_split_output).grid(row=0, column=2, padx=5)
         
-        self.split_button = ttk.Button(split_frame, text="开始拆分", command=self.start_split, width=20)
-        self.split_button.grid(row=7, column=0, columnspan=3, pady=10)
+        self.split_button = ttk.Button(split_frame, text="开始拆分", command=self.start_split, width=15)
+        self.split_button.grid(row=7, column=0, columnspan=3, pady=5)
         
-        # 初始隐藏
         self.column_position_frame.grid_remove()
         self.row_split_frame.grid_remove()
         self.specific_row_frame.grid_remove()
@@ -975,25 +980,23 @@ class DataProcessingGUI:
         option_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         
         self.batch_operation = tk.StringVar(value="clean")
-        ttk.Radiobutton(option_frame, text="清理数据（去重+去空白）", variable=self.batch_operation, 
+        ttk.Radiobutton(option_frame, text="清理数据", variable=self.batch_operation, 
                        value="clean").grid(row=0, column=0, padx=10)
         ttk.Radiobutton(option_frame, text="去除空行", variable=self.batch_operation, 
                        value="remove_empty").grid(row=0, column=1, padx=10)
         
-        self.batch_button = ttk.Button(batch_frame, text="开始批量处理", command=self.start_batch, width=20)
-        self.batch_button.grid(row=2, column=0, columnspan=2, pady=10)
+        self.batch_button = ttk.Button(batch_frame, text="开始批量处理", command=self.start_batch, width=15)
+        self.batch_button.grid(row=2, column=0, columnspan=2, pady=5)
     
     def toggle_split_method(self):
         """切换拆分方式"""
         method = self.split_method.get()
         
-        # 隐藏所有设置
         self.column_split_frame.grid_remove()
         self.column_position_frame.grid_remove()
         self.row_split_frame.grid_remove()
         self.specific_row_frame.grid_remove()
         
-        # 显示选中的设置
         if method == "by_columns":
             self.column_split_frame.grid()
         elif method == "by_column_position":
@@ -1040,24 +1043,12 @@ class DataProcessingGUI:
                 reference_columns = columns if columns else [f"列{i+1}" for i in range(10)]
             
             preview_window = tk.Toplevel(self.root)
-            preview_window.title("列名预览 - 点击列名添加到选择")
-            preview_window.geometry("500x600")
+            preview_window.title("列名预览")
+            preview_window.geometry("400x500")
             
-            tip_label = ttk.Label(preview_window, 
-                                 text="点击列名可添加到'按列名选择'输入框，支持多选",
-                                 foreground="blue")
-            tip_label.pack(pady=10)
-            
-            list_frame = ttk.Frame(preview_window)
-            list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-            
-            columns_listbox = tk.Listbox(list_frame, selectmode=tk.MULTIPLE, 
-                                        height=20, width=60)
-            columns_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            
-            scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=columns_listbox.yview)
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            columns_listbox.configure(yscrollcommand=scrollbar.set)
+            columns_listbox = tk.Listbox(preview_window, selectmode=tk.MULTIPLE, 
+                                        height=20, width=50)
+            columns_listbox.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
             
             for i, col in enumerate(reference_columns, 1):
                 columns_listbox.insert(tk.END, f"{i}. {col}")
@@ -1068,7 +1059,6 @@ class DataProcessingGUI:
             def add_selected_columns():
                 selected_indices = columns_listbox.curselection()
                 if not selected_indices:
-                    messagebox.showwarning("警告", "请先选择列名")
                     return
                 
                 selected_columns = []
@@ -1090,35 +1080,12 @@ class DataProcessingGUI:
                 
                 self.columns_by_name.delete(0, tk.END)
                 self.columns_by_name.insert(0, new_text)
-                
-                self.log(f"已添加列名: {', '.join(selected_columns)}")
-                messagebox.showinfo("成功", f"已添加 {len(selected_columns)} 个列名到选择框")
-            
-            def add_all_columns():
-                all_columns = [re.sub(r'^\d+\.\s*', '', columns_listbox.get(idx)) 
-                              for idx in range(columns_listbox.size())]
-                
-                if all_columns:
-                    new_text = ', '.join(all_columns)
-                    self.columns_by_name.delete(0, tk.END)
-                    self.columns_by_name.insert(0, new_text)
-                    
-                    self.log(f"已添加所有列名: {len(all_columns)}个")
-                    messagebox.showinfo("成功", f"已添加所有 {len(all_columns)} 个列名")
+                preview_window.destroy()
             
             ttk.Button(button_frame, text="添加选中列名", 
                       command=add_selected_columns).pack(side=tk.LEFT, padx=5)
-            ttk.Button(button_frame, text="添加所有列名", 
-                      command=add_all_columns).pack(side=tk.LEFT, padx=5)
             ttk.Button(button_frame, text="关闭", 
                       command=preview_window.destroy).pack(side=tk.LEFT, padx=5)
-            
-            def on_double_click(event):
-                selection = columns_listbox.curselection()
-                if selection:
-                    add_selected_columns()
-            
-            columns_listbox.bind('<Double-Button-1>', on_double_click)
             
         except Exception as e:
             messagebox.showerror("错误", f"读取文件失败: {str(e)}")
@@ -1137,24 +1104,12 @@ class DataProcessingGUI:
             columns, has_header = self.get_columns_quick(file_path)
             
             preview_window = tk.Toplevel(self.root)
-            preview_window.title("列名预览 - 点击列名添加到拆分依据")
-            preview_window.geometry("500x600")
+            preview_window.title("列名预览")
+            preview_window.geometry("400x500")
             
-            tip_label = ttk.Label(preview_window, 
-                                 text="点击列名可添加到'拆分依据列'输入框，支持多选",
-                                 foreground="blue")
-            tip_label.pack(pady=10)
-            
-            list_frame = ttk.Frame(preview_window)
-            list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-            
-            columns_listbox = tk.Listbox(list_frame, selectmode=tk.MULTIPLE, 
-                                        height=20, width=60)
-            columns_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            
-            scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=columns_listbox.yview)
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            columns_listbox.configure(yscrollcommand=scrollbar.set)
+            columns_listbox = tk.Listbox(preview_window, selectmode=tk.MULTIPLE, 
+                                        height=20, width=50)
+            columns_listbox.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
             
             for i, col in enumerate(columns, 1):
                 columns_listbox.insert(tk.END, f"{i}. {col}")
@@ -1165,7 +1120,6 @@ class DataProcessingGUI:
             def add_selected_columns():
                 selected_indices = columns_listbox.curselection()
                 if not selected_indices:
-                    messagebox.showwarning("警告", "请先选择列名")
                     return
                 
                 selected_columns = []
@@ -1187,14 +1141,117 @@ class DataProcessingGUI:
                 
                 self.split_columns.delete(0, tk.END)
                 self.split_columns.insert(0, new_text)
-                
-                self.log(f"已添加拆分列: {', '.join(selected_columns)}")
-                messagebox.showinfo("成功", f"已添加 {len(selected_columns)} 个列名到拆分依据列")
+                preview_window.destroy()
             
             ttk.Button(button_frame, text="添加选中列名", 
                       command=add_selected_columns).pack(side=tk.LEFT, padx=5)
-            ttk.Button(button_frame, text="添加所有列名", 
-                      command=lambda: None).pack(side=tk.LEFT, padx=5)
+            ttk.Button(button_frame, text="关闭", 
+                      command=preview_window.destroy).pack(side=tk.LEFT, padx=5)
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"读取文件失败: {str(e)}")
+    
+    def preview_position_columns(self):
+        """预览列名用于选择拆分位置"""
+        if self.is_processing:
+            return
+        
+        file_path = self.split_file_path.get()
+        if not file_path:
+            messagebox.showwarning("警告", "请先选择文件")
+            return
+        
+        try:
+            columns, has_header = self.get_columns_quick(file_path)
+            
+            preview_window = tk.Toplevel(self.root)
+            preview_window.title("选择拆分位置")
+            preview_window.geometry("400x500")
+            
+            columns_listbox = tk.Listbox(preview_window, selectmode=tk.SINGLE, 
+                                        height=20, width=50)
+            columns_listbox.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+            
+            for i, col in enumerate(columns, 1):
+                columns_listbox.insert(tk.END, f"{i}. {col}")
+            
+            button_frame = ttk.Frame(preview_window)
+            button_frame.pack(pady=10)
+            
+            def set_split_position():
+                selected_indices = columns_listbox.curselection()
+                if not selected_indices:
+                    return
+                
+                selected_idx = selected_indices[0]
+                column_number = selected_idx + 1
+                
+                self.split_position.delete(0, tk.END)
+                self.split_position.insert(0, str(column_number))
+                preview_window.destroy()
+            
+            ttk.Button(button_frame, text="设置拆分位置", 
+                      command=set_split_position).pack(side=tk.LEFT, padx=5)
+            ttk.Button(button_frame, text="关闭", 
+                      command=preview_window.destroy).pack(side=tk.LEFT, padx=5)
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"读取文件失败: {str(e)}")
+    
+    def preview_specific_columns(self):
+        """预览列名用于选择指定列"""
+        if self.is_processing:
+            return
+        
+        file_path = self.split_file_path.get()
+        if not file_path:
+            messagebox.showwarning("警告", "请先选择文件")
+            return
+        
+        try:
+            columns, has_header = self.get_columns_quick(file_path)
+            
+            preview_window = tk.Toplevel(self.root)
+            preview_window.title("选择指定列")
+            preview_window.geometry("400x500")
+            
+            columns_listbox = tk.Listbox(preview_window, selectmode=tk.MULTIPLE, 
+                                        height=20, width=50)
+            columns_listbox.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+            
+            for i, col in enumerate(columns, 1):
+                columns_listbox.insert(tk.END, f"{i}. {col}")
+            
+            button_frame = ttk.Frame(preview_window)
+            button_frame.pack(pady=10)
+            
+            def add_selected_columns():
+                selected_indices = columns_listbox.curselection()
+                if not selected_indices:
+                    return
+                
+                selected_numbers = []
+                for idx in selected_indices:
+                    column_number = idx + 1
+                    selected_numbers.append(str(column_number))
+                
+                current_text = self.specific_column_numbers.get().strip()
+                
+                if current_text:
+                    existing_numbers = [n.strip() for n in current_text.split(',') if n.strip()]
+                    for num in selected_numbers:
+                        if num not in existing_numbers:
+                            existing_numbers.append(num)
+                    new_text = ','.join(existing_numbers)
+                else:
+                    new_text = ','.join(selected_numbers)
+                
+                self.specific_column_numbers.delete(0, tk.END)
+                self.specific_column_numbers.insert(0, new_text)
+                preview_window.destroy()
+            
+            ttk.Button(button_frame, text="添加选中列号", 
+                      command=add_selected_columns).pack(side=tk.LEFT, padx=5)
             ttk.Button(button_frame, text="关闭", 
                       command=preview_window.destroy).pack(side=tk.LEFT, padx=5)
             
@@ -1210,8 +1267,6 @@ class DataProcessingGUI:
             for col_name in column_names:
                 if col_name in df_columns:
                     selected_columns.append(col_name)
-                else:
-                    self.log(f"警告: 列 '{col_name}' 不存在")
         
         if self.columns_by_index.get().strip():
             index_str = self.columns_by_index.get().strip()
@@ -1258,14 +1313,12 @@ class DataProcessingGUI:
         selected = self.file_listbox.curselection()
         for index in reversed(selected):
             self.file_listbox.delete(index)
-            self.log("移除文件")
     
     def clear_file_list(self):
         if self.is_processing:
             return
         
         self.file_listbox.delete(0, tk.END)
-        self.log("清空文件列表")
     
     def select_output_file(self):
         if self.is_processing:
@@ -1282,7 +1335,6 @@ class DataProcessingGUI:
         )
         if file_path:
             self.output_path.set(file_path)
-            self.log(f"输出文件设置为: {file_path}")
     
     def select_input_file(self):
         if self.is_processing:
@@ -1424,24 +1476,15 @@ class DataProcessingGUI:
                 columns, has_header = self.get_columns_quick(file)
                 if has_header:
                     reference_columns = columns
-                    self.log(f"使用文件 {os.path.basename(file)} 的列名作为参考")
                     break
             
             if reference_columns is None:
                 columns, _ = self.get_columns_quick(files[0])
                 reference_columns = columns if columns else [f"列{i+1}" for i in range(10)]
-                self.log("所有文件都没有列名，使用默认列名")
-            
-            self.log(f"参考列名: {reference_columns}")
             
             selected_columns = self.parse_column_selection(
                 self.columns_by_name.get(), reference_columns
             )
-            
-            if selected_columns:
-                self.log(f"选择的列: {selected_columns}")
-            else:
-                self.log("选择所有列")
             
             dfs = []
             total_files = len(files)
@@ -1458,7 +1501,6 @@ class DataProcessingGUI:
                 has_header = self.detect_header(df)
                 
                 if not has_header:
-                    self.log(f"文件 {os.path.basename(file)} 没有列名，使用默认列名并按位置匹配")
                     file_extension = os.path.splitext(file)[1].lower()
                     if file_extension == '.csv':
                         df = self.read_csv_without_header(file)
@@ -1490,10 +1532,8 @@ class DataProcessingGUI:
             merge_type = self.merge_type.get()
             if merge_type == "vertical":
                 merged_df = pd.concat(dfs, ignore_index=True)
-                self.log(f"垂直合并完成，总行数: {len(merged_df)}")
             else:
                 merged_df = pd.concat(dfs, axis=1)
-                self.log(f"水平合并完成，总列数: {len(merged_df.columns)}")
             
             self.update_progress(75, "正在处理数据...", force_update=True)
             
@@ -1507,28 +1547,23 @@ class DataProcessingGUI:
             
             if self.remove_dup_var.get():
                 self.check_cancel()
-                before_count = len(merged_df)
                 merged_df = merged_df.drop_duplicates()
-                self.log(f"去除重复行: {before_count - len(merged_df)}行")
             
             self.check_cancel()
             self.update_progress(90, "正在保存结果...", force_update=True)
-            self.log("正在应用数据类型转换...")
             
             if self.save_excel_file(merged_df, output_path):
                 self.update_progress(100, "合并完成", force_update=True)
                 self.log(f"合并完成！结果已保存到: {output_path}")
-                self.log(f"合并后数据: {len(merged_df)}行, {len(merged_df.columns)}列")
                 
                 self.stop_indeterminate("合并完成", success=True)
-                messagebox.showinfo("成功", f"合并完成！\n输出文件: {output_path}\n共处理 {len(merged_df)} 行数据")
+                messagebox.showinfo("成功", f"合并完成！\n输出文件: {output_path}")
             else:
                 raise Exception("保存文件失败")
             
         except Exception as e:
             if "取消" in str(e):
                 self.stop_indeterminate("已取消", success=False)
-                self.log("操作已被用户取消")
             else:
                 self.stop_indeterminate("处理失败", success=False)
                 self.log(f"合并失败: {str(e)}")
@@ -1556,7 +1591,6 @@ class DataProcessingGUI:
         try:
             convert_type = self.convert_type.get()
             self.start_indeterminate("正在转换...")
-            self.log(f"开始转换: {convert_type}")
             
             if convert_type == "excel_to_word":
                 self.convert_excel_to_word(input_path, output_path)
@@ -1578,7 +1612,6 @@ class DataProcessingGUI:
         except Exception as e:
             if "取消" in str(e):
                 self.stop_indeterminate("已取消", success=False)
-                self.log("操作已被用户取消")
             else:
                 self.stop_indeterminate("转换失败", success=False)
                 self.log(f"转换失败: {str(e)}")
@@ -1633,7 +1666,7 @@ class DataProcessingGUI:
             
             if idx % batch_size == 0:
                 progress = 50 + (idx / total_rows) * 40
-                self.update_progress(progress, f"正在转换数据 {idx}/{total_rows}")
+                self.update_progress(progress)
         
         self.update_progress(90, "正在保存Word文件...", force_update=True)
         doc.save(output_path)
@@ -1770,11 +1803,6 @@ class DataProcessingGUI:
                     value = df.iloc[i-1, j]
                     if pd.isna(value):
                         table.cell(i, j).text = ''
-                    elif isinstance(value, (int, float, np.int64, np.float64)):
-                        if isinstance(value, float) and value.is_integer():
-                            table.cell(i, j).text = str(int(value))
-                        else:
-                            table.cell(i, j).text = str(value)
                     else:
                         table.cell(i, j).text = str(value)
             
@@ -1932,7 +1960,6 @@ class DataProcessingGUI:
         except Exception as e:
             if "取消" in str(e):
                 self.stop_indeterminate("已取消", success=False)
-                self.log("操作已被用户取消")
             else:
                 self.stop_indeterminate("拆分失败", success=False)
                 self.log(f"拆分失败: {str(e)}")
@@ -1950,8 +1977,6 @@ class DataProcessingGUI:
         if missing_columns:
             raise Exception(f"列不存在: {missing_columns}")
         
-        self.log(f"按列拆分: {split_columns}")
-        
         groups = df.groupby(split_columns)
         total_groups = len(groups)
         
@@ -1968,8 +1993,7 @@ class DataProcessingGUI:
             if self.save_excel_file(group, output_path):
                 if i % max(1, total_groups // 20) == 0:
                     progress = 20 + ((i + 1) / total_groups) * 70
-                    self.update_progress(progress, f"正在保存: {safe_name}.xlsx ({i+1}/{total_groups})")
-                    self.log(f"已保存: {safe_name}.xlsx ({len(group)}行)")
+                    self.update_progress(progress)
         
         self.log(f"按列拆分完成！共生成 {total_groups} 个文件")
     
@@ -1978,7 +2002,6 @@ class DataProcessingGUI:
         pos_type = self.column_position_type.get()
         
         if pos_type == "before_after":
-            # 前后拆分
             try:
                 split_pos = int(self.split_position.get().strip())
                 if split_pos < 1 or split_pos >= len(df.columns):
@@ -1986,30 +2009,25 @@ class DataProcessingGUI:
             except ValueError as e:
                 raise Exception(f"无效的拆分位置: {e}")
             
-            self.log(f"按列位置前后拆分: 列1-{split_pos} 和 列{split_pos+1}-{len(df.columns)}")
-            
-            # 前半部分（列1到split_pos）
             df_before = df.iloc[:, :split_pos]
             output_path_before = os.path.join(output_dir, f"列1-{split_pos}.xlsx")
             
             self.check_cancel()
             if self.save_excel_file(df_before, output_path_before):
-                self.update_progress(50, f"已保存: 列1-{split_pos}.xlsx")
-                self.log(f"已保存: 列1-{split_pos}.xlsx ({len(df_before)}行, {len(df_before.columns)}列)")
+                self.update_progress(50, force_update=True)
+                self.log(f"已保存: 列1-{split_pos}.xlsx")
             
-            # 后半部分（列split_pos+1到最后）
             df_after = df.iloc[:, split_pos:]
             output_path_after = os.path.join(output_dir, f"列{split_pos+1}-{len(df.columns)}.xlsx")
             
             self.check_cancel()
             if self.save_excel_file(df_after, output_path_after):
-                self.update_progress(100, f"已保存: 列{split_pos+1}-{len(df.columns)}.xlsx")
-                self.log(f"已保存: 列{split_pos+1}-{len(df.columns)}.xlsx ({len(df_after)}行, {len(df_after.columns)}列)")
+                self.update_progress(100, force_update=True)
+                self.log(f"已保存: 列{split_pos+1}-{len(df.columns)}.xlsx")
             
             self.log("按列位置前后拆分完成！共生成 2 个文件")
             
         elif pos_type == "specific_columns":
-            # 指定列提取
             columns_str = self.specific_column_numbers.get().strip()
             if not columns_str:
                 raise Exception("请输入指定列号")
@@ -2024,15 +2042,9 @@ class DataProcessingGUI:
                     else:
                         column_indices.append(int(part))
                 
-                # 去重并排序
                 column_indices = sorted(set(column_indices))
                 
-                # 验证列号
                 valid_indices = [i for i in column_indices if 1 <= i <= len(df.columns)]
-                invalid_indices = [i for i in column_indices if i < 1 or i > len(df.columns)]
-                
-                if invalid_indices:
-                    self.log(f"警告: 无效列号: {invalid_indices}")
                 
                 if not valid_indices:
                     raise Exception("没有有效的列号")
@@ -2040,17 +2052,14 @@ class DataProcessingGUI:
             except ValueError:
                 raise Exception("无效的列号格式")
             
-            self.log(f"按指定列提取: 列 {valid_indices}")
-            
-            # 提取指定列（列号从1开始，转换为0-based索引）
             df_specific = df.iloc[:, [i-1 for i in valid_indices]]
             
             output_path = os.path.join(output_dir, f"指定列_{'_'.join(map(str, valid_indices))}.xlsx")
             
             self.check_cancel()
             if self.save_excel_file(df_specific, output_path):
-                self.update_progress(100, f"已保存: 指定列_{'_'.join(map(str, valid_indices))}.xlsx")
-                self.log(f"已保存: 指定列_{'_'.join(map(str, valid_indices))}.xlsx ({len(df_specific)}行, {len(df_specific.columns)}列)")
+                self.update_progress(100, force_update=True)
+                self.log(f"已保存: 指定列_{'_'.join(map(str, valid_indices))}.xlsx")
             
             self.log("按指定列提取完成！共生成 1 个文件")
     
@@ -2066,8 +2075,6 @@ class DataProcessingGUI:
         total_rows = len(df)
         total_files = (total_rows + rows_per_file - 1) // rows_per_file
         
-        self.log(f"按行数拆分: 每{rows_per_file}行一个文件，共{total_files}个文件")
-        
         for i in range(total_files):
             self.check_cancel()
             
@@ -2080,8 +2087,7 @@ class DataProcessingGUI:
             
             if self.save_excel_file(chunk, output_path):
                 progress = 20 + ((i + 1) / total_files) * 70
-                self.update_progress(progress, f"正在保存: part_{i+1:03d}.xlsx ({i+1}/{total_files})")
-                self.log(f"已保存: part_{i+1:03d}.xlsx ({len(chunk)}行)")
+                self.update_progress(progress)
         
         self.log(f"按行数拆分完成！共生成 {total_files} 个文件")
     
@@ -2100,8 +2106,6 @@ class DataProcessingGUI:
         if not split_rows:
             raise Exception("请输入有效的行号")
         
-        self.log(f"按特定行拆分: {split_rows}")
-        
         all_split_points = [0] + split_rows + [len(df)]
         total_files = len(split_rows) + 1
         
@@ -2117,8 +2121,7 @@ class DataProcessingGUI:
             
             if self.save_excel_file(chunk, output_path):
                 progress = 20 + ((i + 1) / total_files) * 70
-                self.update_progress(progress, f"正在保存: part_{i+1:03d}.xlsx ({i+1}/{total_files})")
-                self.log(f"已保存: part_{i+1:03d}.xlsx ({len(chunk)}行)")
+                self.update_progress(progress)
         
         self.log(f"按特定行拆分完成！共生成 {total_files} 个文件")
     
@@ -2143,9 +2146,8 @@ class DataProcessingGUI:
                           if f.endswith(('.xlsx', '.xls', '.csv'))]
             
             if not excel_files:
-                self.log("目录中没有支持的文件")
                 self.stop_indeterminate("未找到文件", success=False)
-                messagebox.showwarning("警告", "目录中没有支持的文件（.xlsx, .xls, .csv）")
+                messagebox.showwarning("警告", "目录中没有支持的文件")
                 return
             
             output_dir = os.path.join(directory, 'processed')
@@ -2163,7 +2165,7 @@ class DataProcessingGUI:
                     self.log(f"处理文件 {i+1}/{total_files}: {file_name}")
                 
                 progress = (i / total_files) * 100
-                self.update_progress(progress, f"正在处理 {i+1}/{total_files}")
+                self.update_progress(progress)
                 
                 df = self.read_excel_file(file_path)
                 
@@ -2187,12 +2189,11 @@ class DataProcessingGUI:
             self.log(f"批量处理完成！处理了 {total_files} 个文件")
             
             self.stop_indeterminate("批量处理完成", success=True)
-            messagebox.showinfo("成功", f"批量处理完成！\n处理了 {total_files} 个文件\n输出目录: {output_dir}")
+            messagebox.showinfo("成功", f"批量处理完成！\n处理了 {total_files} 个文件")
             
         except Exception as e:
             if "取消" in str(e):
                 self.stop_indeterminate("已取消", success=False)
-                self.log("操作已被用户取消")
             else:
                 self.stop_indeterminate("处理失败", success=False)
                 self.log(f"批量处理失败: {str(e)}")
