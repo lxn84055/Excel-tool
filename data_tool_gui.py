@@ -13,7 +13,7 @@ class DataProcessingGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Excel/Word 数据处理工具")
-        self.root.geometry("800x700")  # 宽度调小，高度调大
+        self.root.geometry("800x700")
         
         # 设置样式
         style = ttk.Style()
@@ -54,10 +54,14 @@ class DataProcessingGUI:
         # 日志区域
         self.create_log_area()
         
+        # 创建说明按钮
+        self.create_help_button()
+        
         # 初始布局：标签页在上，进度和日志在下
         self.notebook.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        self.progress_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
-        self.log_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=5)
+        self.help_button_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=3)
+        self.progress_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=3)
+        self.log_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=3)
         
         # 配置网格权重
         self.root.columnconfigure(0, weight=1)
@@ -111,6 +115,7 @@ class DataProcessingGUI:
         
         # 处理中布局：进度和日志置顶
         self.notebook.grid_remove()
+        self.help_button_frame.grid_remove()
         self.progress_frame.grid_remove()
         self.log_frame.grid_remove()
         
@@ -143,12 +148,14 @@ class DataProcessingGUI:
         
         # 恢复正常布局
         self.notebook.grid_remove()
+        self.help_button_frame.grid_remove()
         self.progress_frame.grid_remove()
         self.log_frame.grid_remove()
         
         self.notebook.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        self.progress_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
-        self.log_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=5)
+        self.help_button_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=3)
+        self.progress_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=3)
+        self.log_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=3)
         
         self.root.update_idletasks()
     
@@ -612,6 +619,9 @@ class DataProcessingGUI:
             elif file_extension == '.xls':
                 df.to_excel(file_path, index=False, engine='xlwt')
                 return True
+            elif file_extension == '.txt':
+                df.to_csv(file_path, index=False, sep='\t', encoding='utf-8-sig')
+                return True
             else:
                 df.to_excel(file_path, index=False, engine='openpyxl')
                 return True
@@ -697,6 +707,127 @@ class DataProcessingGUI:
         clear_btn = ttk.Button(self.log_frame, text="清除日志", command=self.clear_log)
         clear_btn.grid(row=1, column=0, pady=2)
     
+    def create_help_button(self):
+        """创建说明按钮"""
+        self.help_button_frame = ttk.Frame(self.main_frame)
+        ttk.Button(self.help_button_frame, text="📖 功能说明", command=self.show_help).pack(side=tk.LEFT, padx=5)
+    
+    def show_help(self):
+        """显示功能说明"""
+        help_window = tk.Toplevel(self.root)
+        help_window.title("功能使用说明")
+        help_window.geometry("700x600")
+        
+        help_text = scrolledtext.ScrolledText(help_window, width=80, height=35)
+        help_text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+        
+        help_content = """
+╔══════════════════════════════════════════════════════════════╗
+║                    功能使用说明                                ║
+╚══════════════════════════════════════════════════════════════╝
+
+【一、数据合并】
+功能：将多个Excel/CSV文件合并为一个文件
+
+使用方法：
+1. 点击"添加文件"选择要合并的文件
+2. 可选：按列名或列号选择特定列
+3. 选择合并方式（垂直/水平）
+4. 设置去除空白选项
+5. 指定输出文件路径
+6. 点击"开始合并"
+
+示例：
+- 垂直合并：文件A（100行） + 文件B（50行） = 150行
+- 水平合并：文件A（5列） + 文件B（3列） = 8列
+
+【二、格式转换】
+功能：在不同格式之间转换数据
+
+支持格式：
+- Excel/CSV → Word
+- Excel/CSV → PDF
+- Excel/CSV → PPT
+- Excel/CSV → TXT（文本文件）
+- Word → Excel
+- Word → PDF
+- PPT → PDF
+
+【三、数据拆分】
+功能：将一个大文件拆分为多个小文件
+
+拆分方式：
+1. 按列值拆分：根据某列的不同值拆分
+   示例：按"部门"列拆分 → 销售部.xlsx、技术部.xlsx
+
+2. 按列位置拆分：
+   - 前后拆分：按列号拆分
+     示例：输入3 → 列1-3.xlsx、列4-最后.xlsx
+     多列：输入3,7,9 → 列1-3.xlsx、列4-7.xlsx、列8-9.xlsx、列10-最后.xlsx
+   - 指定列提取：只提取指定列
+     示例：输入3,5,10 → 只包含第3、5、10列
+
+3. 按行数拆分：每N行一个文件
+   示例：输入1000 → 每1000行一个文件
+
+4. 按特定行拆分：在指定行号处拆分
+   示例：输入100,200 → 第1-100行、第101-200行、第201-最后
+
+【四、批量处理】
+功能：批量处理文件夹中的所有Excel/CSV文件
+
+处理选项：
+1. 清理数据：去重+去空白
+2. 去除空行：删除所有空行
+3. 按列去除重复：根据指定列去重
+4. 公式转纯数值：将公式计算结果转为数值
+
+【五、预览列名】
+功能：快速查看文件列名，支持点击选择
+
+- 点击列名可添加到选择框
+- 支持多选
+- 双击快速添加
+
+【六、公式转纯数值说明】
+功能：将Excel中的公式计算结果转换为纯数值
+
+使用场景：
+- 公式 =A1+B1 计算结果为 100
+- 转换后：直接存储 100（不再保留公式）
+
+示例：
+原始数据：=SUM(A1:A10) → 计算结果 500
+转换后：500（纯数值）
+
+【七、文本格式（TXT）说明】
+功能：将数据保存为制表符分隔的文本文件
+
+特点：
+- 使用Tab分隔符
+- UTF-8编码
+- 可用记事本打开
+- 可导入其他系统
+
+【八、常见问题】
+Q: 文件没有列名怎么办？
+A: 程序会自动检测，无列名时使用"列1、列2..."作为默认列名
+
+Q: 列数不一致怎么办？
+A: 按位置匹配，多余的列使用默认列名
+
+Q: 处理大文件卡顿？
+A: 程序使用多线程处理，界面不会冻结
+
+Q: 如何取消处理？
+A: 处理过程中点击"取消"按钮
+        """
+        
+        help_text.insert(tk.END, help_content)
+        help_text.config(state='disabled')
+        
+        ttk.Button(help_window, text="关闭", command=help_window.destroy).pack(pady=10)
+    
     def clear_log(self):
         if self.is_processing:
             return
@@ -781,7 +912,7 @@ class DataProcessingGUI:
         ttk.Button(button_frame, text="清空列表", command=self.clear_file_list).pack(side=tk.LEFT, padx=3)
         ttk.Button(button_frame, text="预览列名", command=self.preview_columns).pack(side=tk.LEFT, padx=3)
         
-        column_frame = ttk.LabelFrame(merge_frame, text="列选择（留空表示选择所有列）", padding="5")
+        column_frame = ttk.LabelFrame(merge_frame, text="列选择", padding="5")
         column_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=3)
         
         ttk.Label(column_frame, text="按列名:").grid(row=0, column=0, sticky=tk.W, pady=2)
@@ -851,10 +982,12 @@ class DataProcessingGUI:
                        value="excel_to_pdf").grid(row=0, column=2, padx=3, pady=2)
         ttk.Radiobutton(type_frame, text="Excel→PPT", variable=self.convert_type, 
                        value="excel_to_ppt").grid(row=1, column=0, padx=3, pady=2)
+        ttk.Radiobutton(type_frame, text="Excel→TXT", variable=self.convert_type, 
+                       value="excel_to_txt").grid(row=1, column=1, padx=3, pady=2)
         ttk.Radiobutton(type_frame, text="Word→PDF", variable=self.convert_type, 
-                       value="word_to_pdf").grid(row=1, column=1, padx=3, pady=2)
+                       value="word_to_pdf").grid(row=1, column=2, padx=3, pady=2)
         ttk.Radiobutton(type_frame, text="PPT→PDF", variable=self.convert_type, 
-                       value="ppt_to_pdf").grid(row=1, column=2, padx=3, pady=2)
+                       value="ppt_to_pdf").grid(row=2, column=0, padx=3, pady=2)
         
         input_frame = ttk.LabelFrame(convert_frame, text="输入文件", padding="5")
         input_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=3)
@@ -918,11 +1051,10 @@ class DataProcessingGUI:
         self.before_after_frame = ttk.Frame(self.column_position_frame)
         self.before_after_frame.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=2)
         
-        ttk.Label(self.before_after_frame, text="拆分位置(多列用逗号分隔):").grid(row=0, column=0, sticky=tk.W, pady=2)
+        ttk.Label(self.before_after_frame, text="拆分位置(多列用逗号):").grid(row=0, column=0, sticky=tk.W, pady=2)
         self.split_position = ttk.Entry(self.before_after_frame, width=35)
         self.split_position.grid(row=0, column=1, sticky=tk.W, pady=2)
         ttk.Button(self.before_after_frame, text="从预览选择", command=self.preview_position_columns).grid(row=0, column=2, padx=3)
-        ttk.Label(self.before_after_frame, text="(如: 3,7,9 表示按3、7、9列拆分)").grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=2)
         
         self.specific_columns_frame = ttk.Frame(self.column_position_frame)
         self.specific_columns_frame.grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=2)
@@ -969,23 +1101,45 @@ class DataProcessingGUI:
         self.notebook.add(batch_frame, text="批量处理")
         
         dir_frame = ttk.LabelFrame(batch_frame, text="选择文件夹", padding="5")
-        dir_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=3)
+        dir_frame.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=3)
         
         self.batch_dir = tk.StringVar()
         ttk.Entry(dir_frame, textvariable=self.batch_dir, width=55).grid(row=0, column=0, padx=3)
         ttk.Button(dir_frame, text="浏览", command=self.select_batch_dir).grid(row=0, column=1)
         
         option_frame = ttk.LabelFrame(batch_frame, text="处理选项", padding="5")
-        option_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=3)
+        option_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=3)
         
         self.batch_operation = tk.StringVar(value="clean")
         ttk.Radiobutton(option_frame, text="清理数据", variable=self.batch_operation, 
-                       value="clean").grid(row=0, column=0, padx=10)
+                       value="clean").grid(row=0, column=0, padx=3)
         ttk.Radiobutton(option_frame, text="去除空行", variable=self.batch_operation, 
-                       value="remove_empty").grid(row=0, column=1, padx=10)
+                       value="remove_empty").grid(row=0, column=1, padx=3)
+        ttk.Radiobutton(option_frame, text="按列去重", variable=self.batch_operation, 
+                       value="remove_dup_by_column", command=self.toggle_batch_column_input).grid(row=0, column=2, padx=3)
+        ttk.Radiobutton(option_frame, text="公式转数值", variable=self.batch_operation, 
+                       value="formula_to_value").grid(row=1, column=0, padx=3, pady=3)
+        
+        # 按列去重的列名输入
+        self.batch_column_frame = ttk.Frame(batch_frame)
+        self.batch_column_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=3)
+        
+        ttk.Label(self.batch_column_frame, text="去重依据列:").grid(row=0, column=0, sticky=tk.W, pady=2)
+        self.batch_dedup_columns = ttk.Entry(self.batch_column_frame, width=40)
+        self.batch_dedup_columns.grid(row=0, column=1, sticky=tk.W, pady=2)
+        ttk.Label(self.batch_column_frame, text="(如: 姓名,手机号 表示这两列都相同才去重)").grid(row=0, column=2, sticky=tk.W)
+        
+        self.batch_column_frame.grid_remove()  # 默认隐藏
         
         self.batch_button = ttk.Button(batch_frame, text="开始批量处理", command=self.start_batch, width=15)
-        self.batch_button.grid(row=2, column=0, columnspan=2, pady=3)
+        self.batch_button.grid(row=3, column=0, columnspan=3, pady=3)
+    
+    def toggle_batch_column_input(self):
+        """切换按列去重的列名输入框显示"""
+        if self.batch_operation.get() == "remove_dup_by_column":
+            self.batch_column_frame.grid()
+        else:
+            self.batch_column_frame.grid_remove()
     
     def toggle_split_method(self):
         """切换拆分方式"""
@@ -1167,12 +1321,9 @@ class DataProcessingGUI:
             preview_window.title("选择拆分位置（可多选）")
             preview_window.geometry("400x500")
             
-            tip_label = ttk.Label(preview_window, text="可多选列名，将按选中列的位置拆分", foreground="blue")
-            tip_label.pack(pady=5)
-            
             columns_listbox = tk.Listbox(preview_window, selectmode=tk.MULTIPLE, 
-                                        height=18, width=50)
-            columns_listbox.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
+                                        height=20, width=50)
+            columns_listbox.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
             
             for i, col in enumerate(columns, 1):
                 columns_listbox.insert(tk.END, f"{i}. {col}")
@@ -1183,12 +1334,9 @@ class DataProcessingGUI:
             def set_split_positions():
                 selected_indices = columns_listbox.curselection()
                 if not selected_indices:
-                    messagebox.showwarning("警告", "请先选择列名")
                     return
                 
-                # 获取选中的列号并排序
                 selected_numbers = sorted([idx + 1 for idx in selected_indices])
-                
                 new_text = ','.join(map(str, selected_numbers))
                 
                 self.split_position.delete(0, tk.END)
@@ -1344,7 +1492,7 @@ class DataProcessingGUI:
         
         convert_type = self.convert_type.get()
         
-        if convert_type in ["excel_to_word", "excel_to_pdf", "excel_to_ppt"]:
+        if convert_type in ["excel_to_word", "excel_to_pdf", "excel_to_ppt", "excel_to_txt"]:
             file_path = filedialog.askopenfilename(
                 title="选择文件",
                 filetypes=[
@@ -1392,6 +1540,12 @@ class DataProcessingGUI:
                     ("Excel文件", "*.xlsx"),
                     ("CSV文件", "*.csv")
                 ]
+            )
+        elif convert_type == "excel_to_txt":
+            file_path = filedialog.asksaveasfilename(
+                title="保存文本文件",
+                defaultextension=".txt",
+                filetypes=[("文本文件", "*.txt")]
             )
         elif convert_type in ["excel_to_pdf", "word_to_pdf", "ppt_to_pdf"]:
             file_path = filedialog.asksaveasfilename(
@@ -1602,6 +1756,8 @@ class DataProcessingGUI:
                 self.convert_excel_to_pdf(input_path, output_path)
             elif convert_type == "excel_to_ppt":
                 self.convert_excel_to_ppt(input_path, output_path)
+            elif convert_type == "excel_to_txt":
+                self.convert_excel_to_txt(input_path, output_path)
             elif convert_type == "word_to_pdf":
                 self.convert_word_to_pdf(input_path, output_path)
             elif convert_type == "ppt_to_pdf":
@@ -1618,6 +1774,25 @@ class DataProcessingGUI:
                 self.stop_indeterminate("转换失败", success=False)
                 self.log(f"转换失败: {str(e)}")
                 messagebox.showerror("错误", f"转换失败: {str(e)}")
+    
+    def convert_excel_to_txt(self, input_path, output_path):
+        """Excel转TXT"""
+        self.update_progress(20, "正在读取文件...", force_update=True)
+        df = self.read_excel_file(input_path)
+        
+        if not self.detect_header(df):
+            file_extension = os.path.splitext(input_path)[1].lower()
+            if file_extension == '.csv':
+                df = self.read_csv_without_header(input_path)
+            else:
+                df = self.read_excel_without_header(input_path)
+        
+        df = self.remove_blank_data(df)
+        
+        self.check_cancel()
+        self.update_progress(70, "正在保存文本文件...", force_update=True)
+        df.to_csv(output_path, index=False, sep='\t', encoding='utf-8-sig')
+        self.log(f"Excel转TXT完成: {output_path}")
     
     def convert_excel_to_word(self, input_path, output_path):
         """Excel转Word"""
@@ -2004,7 +2179,6 @@ class DataProcessingGUI:
         pos_type = self.column_position_type.get()
         
         if pos_type == "before_after":
-            # 多列位置拆分
             columns_str = self.split_position.get().strip()
             if not columns_str:
                 raise Exception("请输入拆分位置列号")
@@ -2018,12 +2192,7 @@ class DataProcessingGUI:
                 
                 split_positions = sorted(set(split_positions))
                 
-                # 验证位置
                 valid_positions = [p for p in split_positions if 1 <= p < len(df.columns)]
-                invalid_positions = [p for p in split_positions if p < 1 or p >= len(df.columns)]
-                
-                if invalid_positions:
-                    self.log(f"警告: 无效拆分位置: {invalid_positions}")
                 
                 if not valid_positions:
                     raise Exception("没有有效的拆分位置")
@@ -2031,9 +2200,6 @@ class DataProcessingGUI:
             except ValueError:
                 raise Exception("无效的拆分位置格式")
             
-            self.log(f"按多列位置拆分: {valid_positions}")
-            
-            # 生成拆分区间
             total_cols = len(df.columns)
             split_points = [0] + valid_positions + [total_cols]
             
@@ -2045,10 +2211,8 @@ class DataProcessingGUI:
                 start_col = split_points[i]
                 end_col = split_points[i + 1]
                 
-                # 提取列范围（0-based索引）
                 df_chunk = df.iloc[:, start_col:end_col]
                 
-                # 生成文件名
                 if i == 0:
                     file_name = f"列1-{end_col}.xlsx"
                 elif i == total_files - 1:
@@ -2219,6 +2383,24 @@ class DataProcessingGUI:
                     df = df.drop_duplicates()
                 elif operation == "remove_empty":
                     df = df.dropna()
+                elif operation == "remove_dup_by_column":
+                    dedup_cols = [c.strip() for c in self.batch_dedup_columns.get().split(',') if c.strip()]
+                    if dedup_cols:
+                        valid_cols = [c for c in dedup_cols if c in df.columns]
+                        if valid_cols:
+                            before_count = len(df)
+                            df = df.drop_duplicates(subset=valid_cols)
+                            self.log(f"按列去重: {valid_cols}, 去除 {before_count - len(df)} 行")
+                        else:
+                            self.log("警告: 指定的去重列不存在")
+                    else:
+                        self.log("警告: 未指定去重列，使用全部列去重")
+                        df = df.drop_duplicates()
+                elif operation == "formula_to_value":
+                    # 公式转纯数值：读取时已使用dtype=object，公式会被计算为值
+                    # 这里只需确保数值列被正确转换
+                    df = self.convert_dtypes_after_processing(df)
+                    self.log("公式已转换为纯数值")
                 
                 output_path = os.path.join(output_dir, f"processed_{file_name}")
                 self.save_excel_file(df, output_path)
