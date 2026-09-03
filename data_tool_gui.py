@@ -149,11 +149,39 @@ class DataProcessingGUI:
             pass
         return widgets
     
+    def remove_blank_data(self, df, remove_blank_rows=True, remove_blank_cols=True, 
+                          remove_blank_cells=True):
+        """去除空白数据"""
+        original_shape = df.shape
+        
+        # 去除空白行
+        if remove_blank_rows:
+            df = df.dropna(how='all')  # 删除所有值都为空的行
+            self.log(f"去除空白行: {original_shape[0] - df.shape[0]}行")
+        
+        # 去除空白列
+        if remove_blank_cols:
+            df = df.dropna(axis=1, how='all')  # 删除所有值都为空的列
+            self.log(f"去除空白列: {original_shape[1] - df.shape[1]}列")
+        
+        # 去除单元格中的空白字符
+        if remove_blank_cells:
+            for col in df.columns:
+                if df[col].dtype == 'object':
+                    # 去除字符串中的首尾空格
+                    df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
+                    # 将空字符串转换为NaN
+                    df[col] = df[col].apply(lambda x: np.nan if isinstance(x, str) and x == '' else x)
+            
+            self.log("去除单元格中的空白字符完成")
+        
+        return df
+    
     def convert_dtypes_after_processing(self, df):
         """处理后将文本形式的数字转换为数字类型，但保留日期时间"""
         try:
             for col in df.columns:
-                if df[col].dtype in ['int64', 'float64', 'datetime64[ns]']:
+                if df[col].dtype in ['int64', 'float64', 'datetime64[ns]', 'Int64', 'Float64']:
                     continue
                 
                 if self.is_datetime_column(df[col]):
@@ -198,6 +226,8 @@ class DataProcessingGUI:
                         r'\d{2}-\d{2}-\d{4}',
                         r'\d{2}/\d{2}/\d{4}',
                         r'\d{4}年\d{1,2}月\d{1,2}日',
+                        r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}',
+                        r'\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}',
                     ]
                     for pattern in date_patterns:
                         if re.search(pattern, value):
@@ -305,7 +335,7 @@ class DataProcessingGUI:
             raise e
     
     def save_excel_file(self, df, file_path):
-        """保存文件"""
+        """保存文件，应用数据类型转换"""
         try:
             df = self.convert_dtypes_after_processing(df)
             
@@ -467,7 +497,7 @@ class DataProcessingGUI:
             raise Exception("操作已被用户取消")
     
     def create_merge_tab(self):
-        """创建数据合并标签页 - 支持选择特定列"""
+        """创建数据合并标签页 - 支持选择特定列和去除空白"""
         merge_frame = ttk.Frame(self.notebook, padding="10")
         self.notebook.add(merge_frame, text="数据合并")
         
@@ -523,13 +553,29 @@ class DataProcessingGUI:
         ttk.Radiobutton(option_frame, text="水平合并（按列拼接）", variable=self.merge_type, 
                        value="horizontal").grid(row=0, column=2, sticky=tk.W, padx=10)
         
+        # 去除空白选项
+        ttk.Label(option_frame, text="去除空白:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        
+        self.remove_blank_rows_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(option_frame, text="去除空白行", 
+                       variable=self.remove_blank_rows_var).grid(row=1, column=1, sticky=tk.W, padx=5)
+        
+        self.remove_blank_cols_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(option_frame, text="去除空白列", 
+                       variable=self.remove_blank_cols_var).grid(row=1, column=2, sticky=tk.W, padx=5)
+        
+        self.remove_blank_cells_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(option_frame, text="去除单元格空白字符", 
+                       variable=self.remove_blank_cells_var).grid(row=2, column=1, sticky=tk.W, padx=5)
+        
+        # 其他选项
         self.add_source_var = tk.BooleanVar()
         ttk.Checkbutton(option_frame, text="添加数据来源标识", 
-                       variable=self.add_source_var).grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=5)
+                       variable=self.add_source_var).grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=5)
         
         self.remove_dup_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(option_frame, text="去除重复行", 
-                       variable=self.remove_dup_var).grid(row=1, column=2, columnspan=2, sticky=tk.W, pady=5)
+                       variable=self.remove_dup_var).grid(row=3, column=2, columnspan=2, sticky=tk.W, pady=5)
         
         # 输出设置
         output_frame = ttk.LabelFrame(merge_frame, text="输出设置", padding="10")
@@ -592,7 +638,7 @@ class DataProcessingGUI:
         self.convert_button.grid(row=3, column=0, columnspan=3, pady=10)
     
     def create_split_tab(self):
-        """创建数据拆分标签页 - 支持按多列或多行拆分"""
+        """创建数据拆分标签页"""
         split_frame = ttk.Frame(self.notebook, padding="10")
         self.notebook.add(split_frame, text="数据拆分")
         
@@ -642,7 +688,7 @@ class DataProcessingGUI:
         ttk.Label(self.specific_row_frame, text="拆分行号:").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.specific_rows = ttk.Entry(self.specific_row_frame, width=50)
         self.specific_rows.grid(row=0, column=1, sticky=tk.W, pady=5)
-        ttk.Label(self.specific_row_frame, text="(用逗号分隔行号，如: 100,200,300 表示在这些行处拆分)").grid(row=0, column=2, sticky=tk.W)
+        ttk.Label(self.specific_row_frame, text="(用逗号分隔行号，如: 100,200,300)").grid(row=0, column=2, sticky=tk.W)
         
         # 输出设置
         output_frame = ttk.LabelFrame(split_frame, text="输出设置", padding="10")
@@ -657,7 +703,7 @@ class DataProcessingGUI:
         self.split_button = ttk.Button(split_frame, text="开始拆分", command=self.start_split, width=20)
         self.split_button.grid(row=6, column=0, columnspan=3, pady=10)
         
-        # 初始隐藏行数拆分设置
+        # 初始隐藏
         self.row_split_frame.grid_remove()
         self.specific_row_frame.grid_remove()
     
@@ -677,7 +723,7 @@ class DataProcessingGUI:
         option_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         
         self.batch_operation = tk.StringVar(value="clean")
-        ttk.Radiobutton(option_frame, text="清理数据", variable=self.batch_operation, 
+        ttk.Radiobutton(option_frame, text="清理数据（去重+去空白）", variable=self.batch_operation, 
                        value="clean").grid(row=0, column=0, padx=10)
         ttk.Radiobutton(option_frame, text="去除空行", variable=self.batch_operation, 
                        value="remove_empty").grid(row=0, column=1, padx=10)
@@ -689,12 +735,10 @@ class DataProcessingGUI:
         """切换拆分方式"""
         method = self.split_method.get()
         
-        # 隐藏所有设置
         self.column_split_frame.grid_remove()
         self.row_split_frame.grid_remove()
         self.specific_row_frame.grid_remove()
         
-        # 显示选中的设置
         if method == "by_columns":
             self.column_split_frame.grid()
         elif method == "by_rows":
@@ -716,12 +760,10 @@ class DataProcessingGUI:
             df = self.read_excel_file(files[0])
             columns = df.columns.tolist()
             
-            # 创建预览窗口
             preview_window = tk.Toplevel(self.root)
             preview_window.title("列名预览")
             preview_window.geometry("400x500")
             
-            # 显示列名
             columns_text = scrolledtext.ScrolledText(preview_window, width=50, height=20)
             columns_text.pack(padx=10, pady=10)
             
@@ -770,7 +812,6 @@ class DataProcessingGUI:
         """解析列选择字符串"""
         selected_columns = []
         
-        # 按列名选择
         if self.columns_by_name.get().strip():
             column_names = [c.strip() for c in self.columns_by_name.get().split(',') if c.strip()]
             for col_name in column_names:
@@ -779,7 +820,6 @@ class DataProcessingGUI:
                 else:
                     self.log(f"警告: 列 '{col_name}' 不存在")
         
-        # 按列坐标选择
         if self.columns_by_index.get().strip():
             index_str = self.columns_by_index.get().strip()
             indices = []
@@ -787,7 +827,6 @@ class DataProcessingGUI:
             for part in index_str.split(','):
                 part = part.strip()
                 if '-' in part:
-                    # 范围选择，如 1-5
                     start, end = part.split('-')
                     indices.extend(range(int(start), int(end) + 1))
                 else:
@@ -797,7 +836,6 @@ class DataProcessingGUI:
                 if 1 <= idx <= len(df_columns):
                     selected_columns.append(df_columns[idx - 1])
         
-        # 去重并保持顺序
         selected_columns = list(dict.fromkeys(selected_columns))
         
         return selected_columns
@@ -961,7 +999,6 @@ class DataProcessingGUI:
             self.batch_dir.set(dir_path)
     
     def update_file_types(self):
-        """更新文件类型"""
         pass
     
     # 处理功能方法
@@ -991,11 +1028,9 @@ class DataProcessingGUI:
             dfs = []
             total_files = len(files)
             
-            # 获取第一个文件的列名，用于列选择
             first_df = self.read_excel_file(files[0])
             all_columns = first_df.columns.tolist()
             
-            # 解析列选择
             selected_columns = self.parse_column_selection(
                 self.columns_by_name.get(), all_columns
             )
@@ -1011,18 +1046,27 @@ class DataProcessingGUI:
                 if i == 0 or i == total_files - 1 or i % 5 == 0:
                     self.log(f"读取文件 {i+1}/{total_files}: {os.path.basename(file)}")
                 
-                self.update_progress((i / total_files) * 50, f"读取文件 {i+1}/{total_files}")
+                self.update_progress((i / total_files) * 40, f"读取文件 {i+1}/{total_files}")
                 
                 df = self.read_excel_file(file)
                 
                 # 选择特定列
                 if selected_columns:
-                    # 检查列是否存在
                     available_columns = [col for col in selected_columns if col in df.columns]
                     if len(available_columns) != len(selected_columns):
                         missing = [col for col in selected_columns if col not in df.columns]
                         self.log(f"警告: 文件 {os.path.basename(file)} 缺少列: {missing}")
                     df = df[available_columns]
+                
+                # 去除空白数据
+                if self.remove_blank_rows_var.get() or self.remove_blank_cols_var.get() or self.remove_blank_cells_var.get():
+                    self.log(f"正在去除文件 {os.path.basename(file)} 的空白数据...")
+                    df = self.remove_blank_data(
+                        df,
+                        remove_blank_rows=self.remove_blank_rows_var.get(),
+                        remove_blank_cols=self.remove_blank_cols_var.get(),
+                        remove_blank_cells=self.remove_blank_cells_var.get()
+                    )
                 
                 # 添加数据来源列
                 if self.add_source_var.get():
@@ -1036,17 +1080,33 @@ class DataProcessingGUI:
             merge_type = self.merge_type.get()
             if merge_type == "vertical":
                 merged_df = pd.concat(dfs, ignore_index=True)
+                self.log(f"垂直合并完成，总行数: {len(merged_df)}")
             else:
                 merged_df = pd.concat(dfs, axis=1)
+                self.log(f"水平合并完成，总列数: {len(merged_df.columns)}")
             
-            self.update_progress(80, "正在处理数据...", force_update=True)
+            self.update_progress(75, "正在处理数据...", force_update=True)
             
+            # 合并后再次去除空白
+            if self.remove_blank_rows_var.get() or self.remove_blank_cols_var.get():
+                self.log("正在去除合并后的空白数据...")
+                merged_df = self.remove_blank_data(
+                    merged_df,
+                    remove_blank_rows=self.remove_blank_rows_var.get(),
+                    remove_blank_cols=self.remove_blank_cols_var.get(),
+                    remove_blank_cells=False  # 已经在单个文件中处理过
+                )
+            
+            # 去除重复行
             if self.remove_dup_var.get():
                 self.check_cancel()
+                before_count = len(merged_df)
                 merged_df = merged_df.drop_duplicates()
+                self.log(f"去除重复行: {before_count - len(merged_df)}行")
             
             self.check_cancel()
             self.update_progress(90, "正在保存结果...", force_update=True)
+            self.log("正在应用数据类型转换...")
             
             if self.save_excel_file(merged_df, output_path):
                 self.update_progress(100, "合并完成", force_update=True)
@@ -1124,6 +1184,12 @@ class DataProcessingGUI:
         self.update_progress(20, "正在读取文件...", force_update=True)
         df = self.read_excel_file(input_path)
         
+        # 去除空白数据
+        df = self.remove_blank_data(df)
+        
+        # 应用数据类型转换
+        df = self.convert_dtypes_after_processing(df)
+        
         self.check_cancel()
         self.update_progress(50, "正在创建Word文档...", force_update=True)
         doc = Document()
@@ -1146,6 +1212,11 @@ class DataProcessingGUI:
             for i, value in enumerate(row):
                 if pd.isna(value):
                     row_cells[i].text = ''
+                elif isinstance(value, (int, float, np.int64, np.float64)):
+                    if isinstance(value, float) and value.is_integer():
+                        row_cells[i].text = str(int(value))
+                    else:
+                        row_cells[i].text = str(value)
                 else:
                     row_cells[i].text = str(value)
             
@@ -1178,6 +1249,9 @@ class DataProcessingGUI:
         self.update_progress(80, "正在转换为Excel...", force_update=True)
         df = pd.DataFrame(data[1:], columns=data[0])
         
+        # 去除空白数据
+        df = self.remove_blank_data(df)
+        
         if self.save_excel_file(df, output_path):
             self.log(f"Word转Excel完成: {output_path}")
         else:
@@ -1192,6 +1266,12 @@ class DataProcessingGUI:
             
             self.update_progress(20, "正在读取Excel文件...", force_update=True)
             df = self.read_excel_file(input_path)
+            
+            # 去除空白数据
+            df = self.remove_blank_data(df)
+            
+            # 应用数据类型转换
+            df = self.convert_dtypes_after_processing(df)
             
             self.check_cancel()
             self.update_progress(50, "正在创建PDF...", force_update=True)
@@ -1236,6 +1316,12 @@ class DataProcessingGUI:
             self.update_progress(20, "正在读取Excel文件...", force_update=True)
             df = self.read_excel_file(input_path)
             
+            # 去除空白数据
+            df = self.remove_blank_data(df)
+            
+            # 应用数据类型转换
+            df = self.convert_dtypes_after_processing(df)
+            
             self.check_cancel()
             self.update_progress(50, "正在创建PPT...", force_update=True)
             
@@ -1265,7 +1351,15 @@ class DataProcessingGUI:
             for i in range(1, rows):
                 for j in range(cols):
                     value = df.iloc[i-1, j]
-                    table.cell(i, j).text = str(value)
+                    if pd.isna(value):
+                        table.cell(i, j).text = ''
+                    elif isinstance(value, (int, float, np.int64, np.float64)):
+                        if isinstance(value, float) and value.is_integer():
+                            table.cell(i, j).text = str(int(value))
+                        else:
+                            table.cell(i, j).text = str(value)
+                    else:
+                        table.cell(i, j).text = str(value)
             
             self.check_cancel()
             self.update_progress(80, "正在保存PPT...", force_update=True)
@@ -1390,6 +1484,10 @@ class DataProcessingGUI:
             self.update_progress(10, "正在读取文件...", force_update=True)
             df = self.read_excel_file(file_path)
             
+            # 去除空白数据
+            self.log("正在去除空白数据...")
+            df = self.remove_blank_data(df)
+            
             output_dir = self.split_output_dir.get()
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
@@ -1426,21 +1524,18 @@ class DataProcessingGUI:
         
         split_columns = [c.strip() for c in columns_str.split(',') if c.strip()]
         
-        # 检查列是否存在
         missing_columns = [col for col in split_columns if col not in df.columns]
         if missing_columns:
             raise Exception(f"列不存在: {missing_columns}")
         
         self.log(f"按列拆分: {split_columns}")
         
-        # 按多列分组
         groups = df.groupby(split_columns)
         total_groups = len(groups)
         
         for i, (name, group) in enumerate(groups):
             self.check_cancel()
             
-            # 生成文件名
             if isinstance(name, tuple):
                 safe_name = '_'.join([re.sub(r'[\\/*?:"<>|]', '_', str(n)) for n in name])
             else:
@@ -1504,9 +1599,7 @@ class DataProcessingGUI:
         
         self.log(f"按特定行拆分: {split_rows}")
         
-        # 添加起始和结束行
         all_split_points = [0] + split_rows + [len(df)]
-        
         total_files = len(split_rows) + 1
         
         for i in range(total_files):
@@ -1572,8 +1665,10 @@ class DataProcessingGUI:
                 df = self.read_excel_file(file_path)
                 
                 if operation == "clean":
+                    # 去除空白数据
+                    df = self.remove_blank_data(df)
+                    # 去除重复行
                     df = df.drop_duplicates()
-                    df = df.fillna('')
                 elif operation == "remove_empty":
                     df = df.dropna()
                 
