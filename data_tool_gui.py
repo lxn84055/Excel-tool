@@ -57,7 +57,7 @@ class DataProcessingGUI:
         # 创建说明按钮
         self.create_help_button()
         
-        # 初始布局：标签页在上，进度和日志在下
+        # 初始布局
         self.notebook.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         self.help_button_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=3)
         self.progress_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=3)
@@ -113,7 +113,7 @@ class DataProcessingGUI:
         self.unbind_mousewheel_recursive(self.root)
         self.cancel_button.config(state='normal')
         
-        # 处理中布局：进度和日志置顶
+        # 处理中布局
         self.notebook.grid_remove()
         self.help_button_frame.grid_remove()
         self.progress_frame.grid_remove()
@@ -204,7 +204,7 @@ class DataProcessingGUI:
         return header_score > data_score
     
     def detect_header_quick(self, file_path):
-        """快速检测文件是否有列名（只读取前几行）"""
+        """快速检测文件是否有列名"""
         try:
             file_extension = os.path.splitext(file_path)[1].lower()
             
@@ -260,7 +260,7 @@ class DataProcessingGUI:
             return True
     
     def detect_header_excel_quick(self, file_path):
-        """快速检测Excel文件是否有列名（只读取前几行）"""
+        """快速检测Excel文件是否有列名"""
         try:
             file_extension = os.path.splitext(file_path)[1].lower()
             
@@ -295,7 +295,7 @@ class DataProcessingGUI:
             return True
     
     def get_columns_quick(self, file_path):
-        """快速获取列名（只读取表头）"""
+        """快速获取列名"""
         try:
             file_extension = os.path.splitext(file_path)[1].lower()
             has_header = self.detect_header_quick(file_path)
@@ -604,10 +604,9 @@ class DataProcessingGUI:
             raise e
     
     def save_excel_file(self, df, file_path):
-        """保存文件，应用数据类型转换"""
+        """保存文件，保持列头不变"""
         try:
-            df = self.convert_dtypes_after_processing(df)
-            
+            # 不再自动转换数据类型，保持原始格式
             file_extension = os.path.splitext(file_path)[1].lower()
             
             if file_extension == '.csv':
@@ -737,90 +736,17 @@ class DataProcessingGUI:
 5. 指定输出文件路径
 6. 点击"开始合并"
 
-示例：
-- 垂直合并：文件A（100行） + 文件B（50行） = 150行
-- 水平合并：文件A（5列） + 文件B（3列） = 8列
-
 【二、格式转换】
-功能：在不同格式之间转换数据
-
-支持格式：
-- Excel/CSV → Word
-- Excel/CSV → PDF
-- Excel/CSV → PPT
-- Excel/CSV → TXT（文本文件）
-- Word → Excel
-- Word → PDF
-- PPT → PDF
+支持格式：Word、Excel、PDF、PPT、TXT
 
 【三、数据拆分】
-功能：将一个大文件拆分为多个小文件
-
-拆分方式：
-1. 按列值拆分：根据某列的不同值拆分
-   示例：按"部门"列拆分 → 销售部.xlsx、技术部.xlsx
-
-2. 按列位置拆分：
-   - 前后拆分：按列号拆分
-     示例：输入3 → 列1-3.xlsx、列4-最后.xlsx
-     多列：输入3,7,9 → 列1-3.xlsx、列4-7.xlsx、列8-9.xlsx、列10-最后.xlsx
-   - 指定列提取：只提取指定列
-     示例：输入3,5,10 → 只包含第3、5、10列
-
-3. 按行数拆分：每N行一个文件
-   示例：输入1000 → 每1000行一个文件
-
-4. 按特定行拆分：在指定行号处拆分
-   示例：输入100,200 → 第1-100行、第101-200行、第201-最后
+拆分方式：按列值、按列位置、按行数、按特定行
 
 【四、批量处理】
-功能：批量处理文件夹中的所有Excel/CSV文件
+处理选项：清理数据、去除空行、公式转数值
 
-处理选项：
-1. 清理数据：去重+去空白
-2. 去除空行：删除所有空行
-3. 按列去除重复：根据指定列去重
-4. 公式转纯数值：将公式计算结果转为数值
-
-【五、预览列名】
-功能：快速查看文件列名，支持点击选择
-
-- 点击列名可添加到选择框
-- 支持多选
-- 双击快速添加
-
-【六、公式转纯数值说明】
-功能：将Excel中的公式计算结果转换为纯数值
-
-使用场景：
-- 公式 =A1+B1 计算结果为 100
-- 转换后：直接存储 100（不再保留公式）
-
-示例：
-原始数据：=SUM(A1:A10) → 计算结果 500
-转换后：500（纯数值）
-
-【七、文本格式（TXT）说明】
-功能：将数据保存为制表符分隔的文本文件
-
-特点：
-- 使用Tab分隔符
-- UTF-8编码
-- 可用记事本打开
-- 可导入其他系统
-
-【八、常见问题】
-Q: 文件没有列名怎么办？
-A: 程序会自动检测，无列名时使用"列1、列2..."作为默认列名
-
-Q: 列数不一致怎么办？
-A: 按位置匹配，多余的列使用默认列名
-
-Q: 处理大文件卡顿？
-A: 程序使用多线程处理，界面不会冻结
-
-Q: 如何取消处理？
-A: 处理过程中点击"取消"按钮
+【五、公式转数值说明】
+将Excel中的公式计算结果转换为纯数值，列头保持不变
         """
         
         help_text.insert(tk.END, help_content)
@@ -1101,45 +1027,25 @@ A: 处理过程中点击"取消"按钮
         self.notebook.add(batch_frame, text="批量处理")
         
         dir_frame = ttk.LabelFrame(batch_frame, text="选择文件夹", padding="5")
-        dir_frame.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=3)
+        dir_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=3)
         
         self.batch_dir = tk.StringVar()
         ttk.Entry(dir_frame, textvariable=self.batch_dir, width=55).grid(row=0, column=0, padx=3)
         ttk.Button(dir_frame, text="浏览", command=self.select_batch_dir).grid(row=0, column=1)
         
         option_frame = ttk.LabelFrame(batch_frame, text="处理选项", padding="5")
-        option_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=3)
+        option_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=3)
         
         self.batch_operation = tk.StringVar(value="clean")
         ttk.Radiobutton(option_frame, text="清理数据", variable=self.batch_operation, 
-                       value="clean").grid(row=0, column=0, padx=3)
+                       value="clean").grid(row=0, column=0, padx=10)
         ttk.Radiobutton(option_frame, text="去除空行", variable=self.batch_operation, 
-                       value="remove_empty").grid(row=0, column=1, padx=3)
-        ttk.Radiobutton(option_frame, text="按列去重", variable=self.batch_operation, 
-                       value="remove_dup_by_column", command=self.toggle_batch_column_input).grid(row=0, column=2, padx=3)
+                       value="remove_empty").grid(row=0, column=1, padx=10)
         ttk.Radiobutton(option_frame, text="公式转数值", variable=self.batch_operation, 
-                       value="formula_to_value").grid(row=1, column=0, padx=3, pady=3)
-        
-        # 按列去重的列名输入
-        self.batch_column_frame = ttk.Frame(batch_frame)
-        self.batch_column_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=3)
-        
-        ttk.Label(self.batch_column_frame, text="去重依据列:").grid(row=0, column=0, sticky=tk.W, pady=2)
-        self.batch_dedup_columns = ttk.Entry(self.batch_column_frame, width=40)
-        self.batch_dedup_columns.grid(row=0, column=1, sticky=tk.W, pady=2)
-        ttk.Label(self.batch_column_frame, text="(如: 姓名,手机号 表示这两列都相同才去重)").grid(row=0, column=2, sticky=tk.W)
-        
-        self.batch_column_frame.grid_remove()  # 默认隐藏
+                       value="formula_to_value").grid(row=0, column=2, padx=10)
         
         self.batch_button = ttk.Button(batch_frame, text="开始批量处理", command=self.start_batch, width=15)
-        self.batch_button.grid(row=3, column=0, columnspan=3, pady=3)
-    
-    def toggle_batch_column_input(self):
-        """切换按列去重的列名输入框显示"""
-        if self.batch_operation.get() == "remove_dup_by_column":
-            self.batch_column_frame.grid()
-        else:
-            self.batch_column_frame.grid_remove()
+        self.batch_button.grid(row=2, column=0, columnspan=2, pady=3)
     
     def toggle_split_method(self):
         """切换拆分方式"""
@@ -1809,7 +1715,6 @@ A: 处理过程中点击"取消"按钮
                 df = self.read_excel_without_header(input_path)
         
         df = self.remove_blank_data(df)
-        df = self.convert_dtypes_after_processing(df)
         
         self.check_cancel()
         self.update_progress(50, "正在创建Word文档...", force_update=True)
@@ -1833,11 +1738,6 @@ A: 处理过程中点击"取消"按钮
             for i, value in enumerate(row):
                 if pd.isna(value):
                     row_cells[i].text = ''
-                elif isinstance(value, (int, float, np.int64, np.float64)):
-                    if isinstance(value, float) and value.is_integer():
-                        row_cells[i].text = str(int(value))
-                    else:
-                        row_cells[i].text = str(value)
                 else:
                     row_cells[i].text = str(value)
             
@@ -1895,7 +1795,6 @@ A: 处理过程中点击"取消"按钮
                     df = self.read_excel_without_header(input_path)
             
             df = self.remove_blank_data(df)
-            df = self.convert_dtypes_after_processing(df)
             
             self.check_cancel()
             self.update_progress(50, "正在创建PDF...", force_update=True)
@@ -1947,7 +1846,6 @@ A: 处理过程中点击"取消"按钮
                     df = self.read_excel_without_header(input_path)
             
             df = self.remove_blank_data(df)
-            df = self.convert_dtypes_after_processing(df)
             
             self.check_cancel()
             self.update_progress(50, "正在创建PPT...", force_update=True)
@@ -2383,24 +2281,14 @@ A: 处理过程中点击"取消"按钮
                     df = df.drop_duplicates()
                 elif operation == "remove_empty":
                     df = df.dropna()
-                elif operation == "remove_dup_by_column":
-                    dedup_cols = [c.strip() for c in self.batch_dedup_columns.get().split(',') if c.strip()]
-                    if dedup_cols:
-                        valid_cols = [c for c in dedup_cols if c in df.columns]
-                        if valid_cols:
-                            before_count = len(df)
-                            df = df.drop_duplicates(subset=valid_cols)
-                            self.log(f"按列去重: {valid_cols}, 去除 {before_count - len(df)} 行")
-                        else:
-                            self.log("警告: 指定的去重列不存在")
-                    else:
-                        self.log("警告: 未指定去重列，使用全部列去重")
-                        df = df.drop_duplicates()
                 elif operation == "formula_to_value":
-                    # 公式转纯数值：读取时已使用dtype=object，公式会被计算为值
-                    # 这里只需确保数值列被正确转换
-                    df = self.convert_dtypes_after_processing(df)
-                    self.log("公式已转换为纯数值")
+                    # 公式转纯数值：保持列头不变，只转换数值
+                    for col in df.columns:
+                        try:
+                            df[col] = pd.to_numeric(df[col], errors='ignore')
+                        except:
+                            pass
+                    self.log("公式已转换为纯数值（列头保持不变）")
                 
                 output_path = os.path.join(output_dir, f"processed_{file_name}")
                 self.save_excel_file(df, output_path)
