@@ -57,6 +57,100 @@ class DataProcessingGUI:
         self.interactive_widgets = []
         self.collect_interactive_widgets()
     
+    # ========== 数据类型转换（核心修改） ==========
+    def convert_text_numbers_to_numeric(self, df):
+        """将文本形式的数字转换为数字类型，时间列除外"""
+        try:
+            for col in df.columns:
+                # 跳过已经是数字类型的列
+                if df[col].dtype in ['int64', 'float64', 'Int64', 'Float64']:
+                    continue
+                
+                # 跳过日期时间列
+                if self.is_datetime_column(df[col]):
+                    continue
+                
+                # 尝试转换为数字
+                try:
+                    # 先尝试直接转换
+                    numeric_vals = pd.to_numeric(df[col], errors='coerce')
+                    
+                    # 计算转换成功率
+                    non_null = df[col].notna().sum()
+                    numeric_count = numeric_vals.notna().sum()
+                    
+                    # 如果80%以上能转换为数字，则应用转换
+                    if numeric_count > non_null * 0.8 and non_null > 0:
+                        # 检查是否为整数
+                        if (numeric_vals.dropna() == numeric_vals.dropna().astype(int)).all():
+                            df[col] = numeric_vals.astype('Int64')
+                        else:
+                            df[col] = numeric_vals
+                except:
+                    pass
+            return df
+        except Exception as e:
+            self.log(f"数据类型转换失败: {str(e)}")
+            return df
+    
+    def is_datetime_column(self, series):
+        """检查列是否包含日期时间数据"""
+        try:
+            sample = series.dropna().head(100)
+            if len(sample) == 0:
+                return False
+            
+            if pd.api.types.is_datetime64_any_dtype(series):
+                return True
+            
+            datetime_count = 0
+            for value in sample:
+                if isinstance(value, (datetime, pd.Timestamp)):
+                    datetime_count += 1
+                elif isinstance(value, str):
+                    date_patterns = [
+                        r'\d{4}-\d{2}-\d{2}',
+                        r'\d{4}/\d{2}/\d{2}',
+                        r'\d{2}-\d{2}-\d{4}',
+                        r'\d{2}/\d{2}/\d{4}',
+                        r'\d{4}年\d{1,2}月\d{1,2}日',
+                        r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}',
+                        r'\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}',
+                    ]
+                    for pattern in date_patterns:
+                        if re.search(pattern, value):
+                            datetime_count += 1
+                            break
+            
+            return datetime_count > len(sample) * 0.5
+        except:
+            return False
+    
+    def save_excel_file(self, df, file_path):
+        """保存文件时自动转换文本数字为数字类型"""
+        try:
+            # 应用数据类型转换
+            df = self.convert_text_numbers_to_numeric(df)
+            
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext == '.csv':
+                df.to_csv(file_path, index=False, encoding='utf-8-sig')
+            elif ext == '.xlsx':
+                df.to_excel(file_path, index=False, engine='openpyxl')
+            elif ext == '.xls':
+                df.to_excel(file_path, index=False, engine='xlwt')
+            elif ext == '.txt':
+                df.to_csv(file_path, index=False, sep='\t', encoding='utf-8-sig')
+            else:
+                df.to_excel(file_path, index=False, engine='openpyxl')
+            return True
+        except Exception as e:
+            self.log(f"保存文件失败: {str(e)}")
+            return False
+    
+    # ========== 其余方法保持不变 ==========
+    # （此处省略与之前相同的代码，只保留关键修改）
+    
     def collect_interactive_widgets(self):
         for widget in self.get_all_widgets(self.main_frame):
             if isinstance(widget, (ttk.Button, ttk.Entry, ttk.Checkbutton, 
@@ -338,15 +432,6 @@ class DataProcessingGUI:
             except: return pd.read_excel(file_path, engine='openpyxl', dtype=object)
         else: return pd.read_excel(file_path, dtype=object)
     
-    def save_excel_file(self, df, file_path):
-        ext = os.path.splitext(file_path)[1].lower()
-        if ext == '.csv': df.to_csv(file_path, index=False, encoding='utf-8-sig')
-        elif ext == '.xlsx': df.to_excel(file_path, index=False, engine='openpyxl')
-        elif ext == '.xls': df.to_excel(file_path, index=False, engine='xlwt')
-        elif ext == '.txt': df.to_csv(file_path, index=False, sep='\t', encoding='utf-8-sig')
-        else: df.to_excel(file_path, index=False, engine='openpyxl')
-        return True
-    
     def on_frame_configure(self, event): self.main_canvas.configure(scrollregion=self.main_canvas.bbox("all"))
     def on_canvas_configure(self, event): self.main_canvas.itemconfig(self.canvas_window, width=event.width)
     
@@ -407,8 +492,8 @@ class DataProcessingGUI:
         win = tk.Toplevel(self.root); win.title("功能使用说明"); win.geometry("700x600")
         text = scrolledtext.ScrolledText(win, width=80, height=35)
         text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
-        content = self.get_help_content()
-        text.insert(tk.END, content); text.config(state='disabled')
+        text.insert(tk.END, self.get_help_content())
+        text.config(state='disabled')
         ttk.Button(win, text="关闭", command=win.destroy).pack(pady=10)
     
     def get_help_content(self):
@@ -418,7 +503,6 @@ class DataProcessingGUI:
 ╚══════════════════════════════════════════════════════════════╝
 
 【一、数据合并】
-功能：将多个Excel/CSV文件合并为一个文件
 - 支持选择特定列（按列名或列号）
 - 支持垂直/水平合并
 - 支持去除空白行/列/字符
@@ -432,20 +516,18 @@ class DataProcessingGUI:
 - PPT → PDF
 
 【三、数据拆分】
-1. 按列值拆分：根据某列的不同值拆分为多个文件
-2. 按列位置拆分：
-   - 前后拆分：输入列号（可多个），按位置切成多段
-   - 指定列提取：只提取指定列
-3. 按行数拆分：每N行一个文件
-4. 按特定行拆分：在指定行号处拆分
+1. 按列值拆分
+2. 按列位置拆分（前后拆分/指定列提取）
+3. 按行数拆分
+4. 按特定行拆分
 
 【四、批量处理】
 - 清理数据（去重+去空白）
 - 去除空行
 - 公式转数值（保持列头不变）
 
-【五、预览列名】
-快速查看列名，支持点击添加到输入框。
+【五、自动类型转换】
+保存时自动将文本形式的数字转为数字类型，时间列除外。
 """
     
     def show_formula_help(self):
@@ -468,7 +550,8 @@ class DataProcessingGUI:
 【公式转数值】
 将公式计算结果转为纯数值，列头保持不变。
 """
-        text.insert(tk.END, content); text.config(state='disabled')
+        text.insert(tk.END, content)
+        text.config(state='disabled')
         ttk.Button(win, text="关闭", command=win.destroy).pack(pady=10)
     
     def show_search(self):
@@ -497,6 +580,7 @@ class DataProcessingGUI:
             ("清理数据","去重+去空白"),
             ("去除空行","删除空行"),
             ("公式转数值","公式结果转为纯数值"),
+            ("自动类型转换","文本数字自动转为数值"),
         ]
         def do_search():
             keyword = search_entry.get().strip().lower()
@@ -554,7 +638,7 @@ class DataProcessingGUI:
     def check_cancel(self):
         if self.cancel_flag: raise Exception("操作已被用户取消")
     
-    # ======================== 标签页创建 ========================
+    # ========== 标签页创建（与之前相同，省略中间重复代码） ==========
     def create_merge_tab(self):
         merge_frame = ttk.Frame(self.notebook, padding="5")
         self.notebook.add(merge_frame, text="数据合并")
@@ -724,7 +808,7 @@ class DataProcessingGUI:
         if pos_type == "before_after": self.before_after_frame.grid()
         elif pos_type == "specific_columns": self.specific_columns_frame.grid()
     
-    # ========== 预览方法 ==========
+    # ========== 预览方法（与之前相同） ==========
     def preview_columns(self):
         if self.is_processing: return
         files = list(self.file_listbox.get(0, tk.END))
@@ -989,6 +1073,7 @@ class DataProcessingGUI:
                 self.check_cancel()
                 merged = merged.drop_duplicates()
             self.update_progress(90, "正在保存结果...", force_update=True)
+            # 保存时自动转换文本数字为数字类型
             self.save_excel_file(merged, output_path)
             self.update_progress(100, "合并完成", force_update=True)
             self.log(f"合并完成！结果已保存到: {output_path}")
@@ -1039,6 +1124,8 @@ class DataProcessingGUI:
         df = self.remove_blank_data(df)
         self.check_cancel()
         self.update_progress(70, "正在保存文本文件...", force_update=True)
+        # 保存时自动转换
+        df = self.convert_text_numbers_to_numeric(df)
         df.to_csv(output_path, index=False, sep='\t', encoding='utf-8-sig')
         self.log(f"Excel转TXT完成: {output_path}")
     
@@ -1051,6 +1138,8 @@ class DataProcessingGUI:
             if ext == '.csv': df = self.read_csv_without_header(input_path)
             else: df = self.read_excel_without_header(input_path)
         df = self.remove_blank_data(df)
+        # 转换数据类型
+        df = self.convert_text_numbers_to_numeric(df)
         self.check_cancel()
         self.update_progress(50, "正在创建Word文档...", force_update=True)
         doc = Document(); doc.add_heading('数据转换结果', level=1)
@@ -1061,7 +1150,12 @@ class DataProcessingGUI:
             self.check_cancel()
             cells = table.add_row().cells
             for i, val in enumerate(row):
-                cells[i].text = '' if pd.isna(val) else str(val)
+                if pd.isna(val): cells[i].text = ''
+                elif isinstance(val, (int, np.integer)): cells[i].text = str(int(val))
+                elif isinstance(val, (float, np.floating)):
+                    if val == int(val): cells[i].text = str(int(val))
+                    else: cells[i].text = str(val)
+                else: cells[i].text = str(val)
             if idx % batch == 0:
                 self.update_progress(50 + (idx/total_rows)*40)
         self.update_progress(90, "正在保存Word文件...", force_update=True)
@@ -1095,6 +1189,7 @@ class DataProcessingGUI:
             if ext == '.csv': df = self.read_csv_without_header(input_path)
             else: df = self.read_excel_without_header(input_path)
         df = self.remove_blank_data(df)
+        df = self.convert_text_numbers_to_numeric(df)
         self.check_cancel()
         self.update_progress(50, "正在创建PDF...", force_update=True)
         doc = SimpleDocTemplate(output_path, pagesize=landscape(A4))
@@ -1128,6 +1223,7 @@ class DataProcessingGUI:
             if ext == '.csv': df = self.read_csv_without_header(input_path)
             else: df = self.read_excel_without_header(input_path)
         df = self.remove_blank_data(df)
+        df = self.convert_text_numbers_to_numeric(df)
         self.check_cancel()
         self.update_progress(50, "正在创建PPT...", force_update=True)
         prs = Presentation()
@@ -1143,7 +1239,12 @@ class DataProcessingGUI:
         for i in range(1, rows):
             for j in range(cols):
                 val = df.iloc[i-1,j]
-                table.cell(i,j).text = '' if pd.isna(val) else str(val)
+                if pd.isna(val): table.cell(i,j).text = ''
+                elif isinstance(val, (int, np.integer)): table.cell(i,j).text = str(int(val))
+                elif isinstance(val, (float, np.floating)):
+                    if val == int(val): table.cell(i,j).text = str(int(val))
+                    else: table.cell(i,j).text = str(val)
+                else: table.cell(i,j).text = str(val)
         prs.save(output_path)
         self.log(f"Excel转PPT完成: {output_path}")
     
